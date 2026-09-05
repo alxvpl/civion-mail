@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>CIVION Mail</title>
+<link href="styles.css" rel="stylesheet"/>
+</head>
+<body>
+<main>
+<header>
+<img alt="" height="40" src="../icons/icon-48.png" width="40"/>
+<div>
+<h1>CIVION Mail</h1>
+<p class="status" data-state="checking" id="runtimeStatus">Checking runtime…</p>
+</div>
+</header>
+<button class="primary" id="analyzeButton" type="button">Analyze selected message</button>
+<button id="openButton" type="button">Open Action Center</button>
+<p aria-live="polite" class="result" id="result" role="status"></p>
+<p class="hint">You can also use Tools → CIVION Mail or right-click a message.</p>
+</main>
+<script src="app.js" type="module"></script>
+</body>
+</html>
