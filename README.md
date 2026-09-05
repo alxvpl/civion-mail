@@ -8,26 +8,37 @@ It is deliberately **not** a second canonical database. CIVION Mail produces loc
 
 ## Current release
 
-**Latest delivered build: CIVION Mail v0.6.10 — 2026-09-05**
+**Latest delivered build: CIVION Mail v0.6.11 — 2026-09-05**
 
 | Item | Value |
 | --- | --- |
 | Extension | CIVION Mail |
-| Version | `0.6.10` |
+| Version | `0.6.11` |
 | Thunderbird minimum | `140.0` |
 | Extension ID | `mail-sentinel@local.invalid` |
 | Storage schema | `v6` |
 | Analysis rules | `local-rules-0.6.8` |
-| XPI size | `170283 bytes` |
-| XPI SHA-256 | `288822b10121d7a76e9cb5d5e1c6c832339e57a0336cbf395210d787647a51ee` |
+| XPI size | `176632 bytes` |
+| XPI SHA-256 | `f18a57b892a9da027ed0523b6406586bc3aca113c63c99efd850341d2d84bbcf` |
 | XPI file set | 32 files |
 | Desktop archive host | `0.4.2` |
 
-Release metadata is published under [`releases/v0.6.10/`](releases/v0.6.10/).
+Release metadata is published under [`releases/v0.6.11/`](releases/v0.6.11/).
 
-The v0.6.10 build is a conformance correction over v0.6.9. It fixes junk-admission enforcement on the live mail path, prevents writes to messages while they are in Junk, restores the manual blocked-domain list inside the admission gate, and evaluates the gate before the historical existing-record branch.
+v0.6.11 is an **interface-only release** over v0.6.10. `background.js` and every module under `modules/` are byte-identical to v0.6.10. Analysis rules, storage schema and runtime behaviour are unchanged.
 
-**Verification status:** syntax checks, targeted junk-gate behaviour checks and package-integrity checks were performed. The full automated CIVION Mail test suite was **not executed for v0.6.10** in the build environment. v0.6.9 had 61 passing automated Mail tests; no equivalent claim is made for v0.6.10.
+The release re-ranks the Action Center instead of adding more controls to an already crowded interface:
+
+- Historical Scan, Archive existing PDFs and Export JSON are grouped under an `Operations` menu with scope notes;
+- the default filter surface is reduced to Search, Priority and Status, with advanced filters under `More filters`;
+- active filters are visible as removable chips;
+- Active, Critical / High, Due within 3 days and New counters now act as quick filters backed by the same predicates used for their counts;
+- detail view information is ranked into operational tiers instead of treating all fields as equal;
+- a `Columns` menu controls persisted column visibility, with Sender and Subject locked visible;
+- hidden columns no longer contribute dead width to the table;
+- a persisted `Compact` density mode is available.
+
+**Verification status:** JavaScript/MJS syntax checks, Action Center markup/wiring checks, targeted jsdom functional tests and package-integrity checks were performed. The full automated CIVION Mail test suite was **not executed for v0.6.11**. v0.6.9 had 61 passing automated Mail tests; no equivalent claim is made for v0.6.10 or v0.6.11.
 
 ## What CIVION Mail does
 
@@ -63,7 +74,7 @@ Messages in Junk are not treated as ordinary mail merely because Junk analysis i
 
 Before analysis and storage, a Junk message must pass the admission gate through one of the accepted paths: a verified protected/institutional identity, or sufficient authenticated non-Junk history for the sender domain. The gate fails closed when it cannot be evaluated safely.
 
-As of v0.6.10:
+Since v0.6.10:
 
 - the gate runs on the live new-mail path as well as Historical Scan;
 - manual blocked domains reach the gate correctly;
@@ -77,7 +88,9 @@ An admitted Junk record does not yet have a dedicated presentation state, and th
 
 Action Center is the main operational UI for CIVION Mail. It provides a structured view of analyzed messages rather than acting as another mailbox list.
 
-Current capabilities include filtering and sorting across semantic fields, message detail, original-message access when still available, manual re-analysis, workflow/status handling, local identity controls, diagnostic/export functions and explicit operations such as Historical Scan and PDF archival.
+As of v0.6.11, routine triage controls are separated from heavier operations. The interface emphasizes the most actionable information first, while account, folder, recipients, timestamps, analysis mode and language are available under `Message and analysis details` rather than competing with risk, deadline and obligation evidence.
+
+Quick counters and filters use the same predicate definitions, so the number shown by a counter and the records opened by that counter cannot diverge by using separate logic. Advanced filter state is exposed through removable chips. Column visibility and compact-density preferences persist locally.
 
 Deleted or unavailable Thunderbird originals are removed from the normal active view while their retained analysis/provenance record can remain available separately.
 
@@ -99,7 +112,7 @@ Historical records for which the original Thunderbird message is no longer avail
 
 ### Intelligent PDF archive
 
-From v0.6.8, recognized PDF documents can be passed locally to CIVION Desktop for validated archival.
+Recognized PDF documents can be passed locally to CIVION Desktop for validated archival.
 
 The current archive root is:
 
@@ -117,7 +130,7 @@ If the archive drive or Desktop host is unavailable, the document remains pendin
 
 ### Archive existing PDFs
 
-From v0.6.9, Action Center provides `Archive existing PDFs` for controlled archival of existing mail attachments.
+Action Center provides `Archive existing PDFs` for controlled archival of existing mail attachments.
 
 After explicit confirmation it scans normal folders across all configured mail accounts without a date or message-count limit. Trash, Junk, Sent, Drafts, Templates, Outbox, virtual folders and unified folders are excluded.
 
@@ -148,7 +161,7 @@ nl.civion.desktop
 CIVION Desktop / downstream CIVION processing
 ```
 
-Candidate packages remain candidate-only. Transport does not itself mean acceptance into CIVION Core, and CIVION Mail has no authority to write canonical Core/PostgreSQL state directly.
+Candidate packages remain candidate-only. Transport does not itself mean acceptance into CIVION Core, and CIVION Mail has no authority to write canonical Core state directly.
 
 The legacy Downloads spool remains only a diagnostic/backward-compatible path for candidate JSON where supported. PDF archival never uses Downloads.
 
@@ -170,13 +183,11 @@ The extension does not persist the full message body or attachment contents in `
 
 Manual deletion of an original Thunderbird message is user-triggered, confirmation-gated and non-permanent (`deletePermanently: false`). CIVION Mail does not automatically delete mail.
 
-See [`PRIVACY.md`](PRIVACY.md) in the packaged release source for the detailed privacy model.
-
 ## Installation and dependencies
 
 ### Thunderbird
 
-CIVION Mail v0.6.10 requires Thunderbird `140.0` or newer.
+CIVION Mail v0.6.11 requires Thunderbird `140.0` or newer.
 
 For an XPI installation:
 
@@ -191,12 +202,13 @@ The extension ID remains `mail-sentinel@local.invalid` for compatibility with th
 
 Core local message analysis can run inside Thunderbird, but Desktop-backed features require the local Desktop Native Messaging host.
 
-The current PDF archive dependency for v0.6.8–v0.6.10 is **CIVION Desktop archive host 0.4.2**. The host should be installed and validated before using automatic PDF archival or `Archive existing PDFs`.
+The current PDF archive dependency remains **CIVION Desktop archive host 0.4.2**. The host should be installed and validated before using automatic PDF archival or `Archive existing PDFs`.
 
 ## Release lineage
 
 Recent releases materially changed the product as follows:
 
+- **v0.6.11** — Action Center re-ranking: Operations menu, simplified filters, filter chips, actionable counters, ranked detail view, column visibility and compact density.
 - **v0.6.10** — junk-gate conformance corrections across live, manual and historical paths.
 - **v0.6.9** — controlled all-account `Archive existing PDFs` operation.
 - **v0.6.8** — intelligent local PDF archive through the Desktop host.
@@ -209,26 +221,25 @@ Recent releases materially changed the product as follows:
 - **v0.6.0** — Desktop spool/bridge integration line.
 - **v0.5.0** — transition from legacy Mail Sentinel identity to CIVION Mail module identity.
 
-Detailed per-version notes are carried in the packaged `README_BG.md`, `RELEASE_NOTES_BG.md` and `CHANGELOG.md`.
-
 ## Known open items
 
 The current release record intentionally leaves several matters open:
 
+- the full automated CIVION Mail test suite still needs to be executed against the v0.6.11 tree;
 - the accepted junk-filter authority decision still contains a pre-analysis versus deadline/payment-information contradiction that requires a later decision revision;
-- distinct presentation of admitted Junk records is not yet implemented;
+- distinct presentation of admitted Junk records remains unresolved;
 - the periodic Junk pass remains deferred;
+- dark-theme override remains explicitly deferred; theming currently follows `prefers-color-scheme`;
 - archive-path ownership remains unresolved at the product-architecture level;
-- the full automated CIVION Mail test suite still needs to be executed against the v0.6.10 working tree;
-- the v0.6.10 XPI binary still needs publication to the canonical distribution locations if it is to be distributed from GitHub/Drive rather than held as the owner-delivered build.
+- v0.6.10 and v0.6.11 binaries are not yet published to Drive.
 
 ## Repository status
 
 This repository was created after CIVION Mail had already progressed through several local builds. The original v0.6.9 XPI was recovered from the owner's active Thunderbird installation and preserved with its historical SHA-256.
 
-The repository root was only partially expanded during that recovery operation; files explicitly marked as recovery stubs are **not canonical source**. Current release evidence and checksums are kept under `releases/` while source normalization continues.
+The repository root still contains material from that recovery process and is not yet a fully normalized source-of-truth tree. Files explicitly marked as recovery stubs must not be treated as canonical source. Current release records, manifest snapshots and checksums are kept under `releases/`.
 
-For v0.6.10, the delivered XPI is the verified build artifact identified by the SHA-256 above. Do not infer a different build from a partial recovery stub.
+For v0.6.11, the owner-delivered XPI is the verified build artifact identified by SHA-256 `f18a57b892a9da027ed0523b6406586bc3aca113c63c99efd850341d2d84bbcf`. Do not infer a different build from a partial recovery stub.
 
 ## Authority boundary
 
