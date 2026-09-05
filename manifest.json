@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "CIVION Mail",
+  "version": "0.6.9",
+  "description": "Local-first Thunderbird runtime with intelligent PDF classification, automatic new-mail archival and controlled all-account archival of existing documents to the validated CIVION archive on drive F:.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "64": "icons/icon-64.png",
+    "96": "icons/icon-96.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "civion-mail@civion.local",
+      "strict_min_version": "140.0"
+    }
+  },
+  "permissions": [
+    "accountsRead",
+    "messagesRead",
+    "messagesMove",
+    "messagesDelete",
+    "storage",
+    "tabs",
+    "notifications",
+    "downloads"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "CIVION Mail",
+    "default_popup": "popup/index.html"
+  }
+}
