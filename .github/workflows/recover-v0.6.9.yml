@@ -1,0 +1,64 @@
+name: Recover CIVION Mail v0.6.9 source tree
+
+on:
+  push:
+    paths:
+      - '.github/workflows/recover-v0.6.9.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify recovered XPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f releases/v0.6.9/CIVION_MAIL_v0_6_9.xpi
+          echo 'e4e82d5cf7dc0734cd80aee272d0d9e569c26a86b7fc80ff38dec939d50a7841  releases/v0.6.9/CIVION_MAIL_v0_6_9.xpi' | sha256sum -c -
+
+      - name: Recover source tree from verified XPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          unzip -q releases/v0.6.9/CIVION_MAIL_v0_6_9.xpi -d "$tmp"
+          cp -a "$tmp"/. ./
+          python - <<'PY'
+          import json
+          with open('manifest.json', encoding='utf-8') as f:
+              manifest = json.load(f)
+          assert manifest['name'] == 'CIVION Mail'
+          assert manifest['version'] == '0.6.9'
+          print('Recovered manifest:', manifest['name'], manifest['version'])
+          PY
+          cat > _SOURCE_RECOVERY_PENDING.md <<'EOF'
+          Source tree recovery completed from the verified CIVION Mail v0.6.9 XPI.
+
+          XPI SHA-256: e4e82d5cf7dc0734cd80aee272d0d9e569c26a86b7fc80ff38dec939d50a7841
+          Source files recovered: 32
+          EOF
+
+      - name: Commit recovered v0.6.9 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'alxvpl'
+          git config user.email 'alexandrov@live.nl'
+          git add CHANGELOG.md PRIVACY.md README_BG.md RELEASE_NOTES_BG.md \
+            action-center background.js icons manifest.json modules popup \
+            _SOURCE_RECOVERY_PENDING.md
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Recover CIVION Mail v0.6.9 source tree from verified XPI'
+          git push origin HEAD:main
