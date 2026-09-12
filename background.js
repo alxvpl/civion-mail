@@ -1410,6 +1410,8 @@ function archiveExistingPublicState(job = archiveExistingJob) {
       accountCount: 0,
       folderCount: 0,
       cancelRequested: false,
+      limit: 0,
+      limitReached: false,
       pauseReason: "",
       restartedFrom: null,
       error: ""
@@ -1432,6 +1434,8 @@ function archiveExistingPublicState(job = archiveExistingJob) {
     accountCount: job.config?.accountCount ?? job.accountCount ?? 0,
     folderCount: job.config?.folderIds?.length ?? job.folderCount ?? 0,
     cancelRequested: job.cancelRequested === true,
+    limit: job.config?.maxMessages ?? 0,
+    limitReached: job.limitReached === true,
     pauseReason: job.pauseReason || "",
     restartedFrom: job.restartedFrom || null,
     error: job.error || ""
@@ -1449,6 +1453,26 @@ async function getArchiveExistingScope() {
     folderIds: normalFolders.map((folder) => folder.id),
     folderLabels: Object.fromEntries(normalFolders.map((folder) => [folder.id, `${folder.accountName} / ${folder.path}`]))
   };
+}
+
+// Decision r001 section 3 covers the PDF sweep as well as Historical Scan: the folder
+// scope is fixed, but the run still needs a real count ceiling and a real date floor.
+// The bound is resolved here so the config the job carries is the bound it ran under.
+function resolveArchiveExistingBounds(raw = {}) {
+  const parsedLimit = Number(raw.maxMessages);
+  const maxMessages = Math.min(
+    HISTORICAL_SCAN_MAX_MESSAGES,
+    Math.max(1, Number.isFinite(parsedLimit) && parsedLimit >= 1 ? Math.trunc(parsedLimit) : HISTORICAL_SCAN_DEFAULT_MESSAGES)
+  );
+  let fromDate = parseHistoricalDate(raw.dateFrom, false);
+  let toDate = parseHistoricalDate(raw.dateTo, true);
+  if (fromDate && toDate && fromDate >= toDate) throw new Error("The start date must be before the end date.");
+  if (!fromDate && !toDate) {
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime());
+    fromDate.setMonth(fromDate.getMonth() - HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS);
+  }
+  return { maxMessages, fromDate, toDate };
 }
 
 async function persistArchiveExistingState(job) {
@@ -1563,22 +1587,30 @@ async function processArchiveExistingBatch(job, messages) {
 async function runArchiveExisting(job) {
   let activeListId = null;
   try {
-    let page = await messenger.messages.query({
+    const queryInfo = {
       folderId: job.config.folderIds,
       autoPaginationTimeout: 750
-    });
-    while (page && !job.cancelRequested) {
+    };
+    if (job.config.fromDate) queryInfo.fromDate = job.config.fromDate;
+    if (job.config.toDate) queryInfo.toDate = job.config.toDate;
+    let page = await messenger.messages.query(queryInfo);
+    while (page && !job.cancelRequested && !job.limitReached) {
       activeListId = page.id || null;
       const pageMessages = Array.isArray(page.messages) ? page.messages : [];
-      for (let index = 0; index < pageMessages.length && !job.cancelRequested; index += HISTORICAL_SCAN_BATCH_SIZE) {
-        const batch = pageMessages.slice(index, index + HISTORICAL_SCAN_BATCH_SIZE);
+      for (let index = 0; index < pageMessages.length && !job.cancelRequested && !job.limitReached; index += HISTORICAL_SCAN_BATCH_SIZE) {
+        // The ceiling is enforced on the way in, so the run never examines one message
+        // more than the bound the user confirmed.
+        const remaining = job.config.maxMessages - job.examined;
+        if (remaining <= 0) { job.limitReached = true; break; }
+        const batch = pageMessages.slice(index, index + Math.min(HISTORICAL_SCAN_BATCH_SIZE, remaining));
         await enqueue(() => processArchiveExistingBatch(job, batch));
+        if (job.examined >= job.config.maxMessages) job.limitReached = true;
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      if (job.cancelRequested || !page.id) break;
+      if (job.cancelRequested || job.limitReached || !page.id) break;
       page = await messenger.messages.continueList(page.id);
     }
-    if (job.cancelRequested && activeListId && messenger.messages.abortList) {
+    if ((job.cancelRequested || job.limitReached) && activeListId && messenger.messages.abortList) {
       try { await messenger.messages.abortList(activeListId); } catch { /* best effort */ }
     }
     job.status = job.pauseReason ? "paused" : job.cancelRequested ? "cancelled" : "completed";
@@ -1593,10 +1625,11 @@ async function runArchiveExisting(job) {
   }
 }
 
-async function startArchiveExisting() {
+async function startArchiveExisting(raw = {}) {
   if (archiveExistingJob?.status === "running") throw new Error("Existing-document archive is already running.");
   if (historicalScanJob?.status === "running") throw new Error("Stop Historical Scan before starting the document archive.");
-  const config = await getArchiveExistingScope();
+  const scope = await getArchiveExistingScope();
+  const config = { ...scope, ...resolveArchiveExistingBounds(raw) };
   if (!config.folderIds.length) throw new Error("No normal mail folders are available.");
   const previous = archiveExistingJob || (await getState()).metadata?.documentArchiveBackfill;
   archiveExistingJob = {
@@ -1614,6 +1647,7 @@ async function startArchiveExisting() {
     failed: 0,
     currentFolder: "",
     cancelRequested: false,
+    limitReached: false,
     restartedFrom: ["cancelled", "interrupted", "paused", "failed"].includes(previous?.status) ? previous.jobId : null,
     error: "",
     pauseReason: "",
@@ -2216,7 +2250,7 @@ async function handleRuntimeMessage(request) {
     return { ok: true, archive: archiveExistingPublicState() };
   }
   if (type === "startArchiveExisting") {
-    const archive = await startArchiveExisting();
+    const archive = await startArchiveExisting(request?.config || {});
     return { ok: true, archive };
   }
   if (type === "cancelArchiveExisting") {

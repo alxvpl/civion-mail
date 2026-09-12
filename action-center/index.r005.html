@@ -325,12 +325,26 @@
 
     <!-- Archive existing PDFs -->
     <div aria-labelledby="tab-archive" class="stack" data-view="archive" hidden="" id="archiveExistingDialog" role="tabpanel" tabindex="0">
-      <div class="warn-bar">Reconciliation gap. This sweep still runs unbounded — every normal folder in every account, no date limit and no count limit — while the accepted design requires historical processing to be explicit and bounded. Historical Scan has been brought into line; this one has not. Until it is, treat a run as a whole-mailbox operation.</div>
       <section class="pane"><p class="pane-note">Recognised PDFs are stored only below F:\01_ARCHIVE\CIVION, and the add-on itself writes nothing: it prepares the document and the Desktop layer validates and writes it. Trash, Junk, Sent, Drafts, Templates, Outbox, virtual and unified folders are excluded. Downloads is never used for document storage.</p></section>
 
       <section class="pane">
         <header class="pane-h"><h2>Fixed scope</h2></header>
         <p class="pane-note" id="archiveExistingScope">Reading available accounts and folders…</p>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Bounds</h2><span class="sub">The folder scope is fixed; the run is not unlimited.</span></header>
+        <div class="setrow">
+          <div class="lbl">Date range</div><p class="help">Leave empty and the run resolves to the last twelve months. There is no setting that means the entire mailbox.</p>
+          <div class="ctl">
+            <label class="fld"><span class="fh">From</span><input id="archiveExistingDateFrom" type="date"/></label>
+            <label class="fld"><span class="fh">To</span><input id="archiveExistingDateTo" type="date"/></label>
+          </div>
+        </div>
+        <div class="setrow">
+          <div class="lbl">Maximum messages examined</div><p class="help">A hard upper bound on the run. There is no value that means no limit.</p>
+          <div class="ctl"><input id="archiveExistingMaxMessages" max="20000" min="1" step="100" type="number" value="2000"/></div>
+        </div>
       </section>
 
       <section class="pane" data-status="idle" id="archiveExistingProgress">

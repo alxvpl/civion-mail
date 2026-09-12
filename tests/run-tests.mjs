@@ -419,9 +419,12 @@ check("T57 bulk archive bypasses the live automatic setting only for its explici
   /force: true,[\s\S]*?verifyExisting: true/u.test(archiveBatch)
   && /archiveDocuments: false/u.test(archiveBatch));
 
-check("T58 all-account scope is fixed to recommended normal folders with no date or message limit",
+// The folder scope is still fixed to recommended normal folders and the interface still
+// says so. What changed with decision r001 section 3 is the rest of it: the run now
+// carries a date window and a count ceiling, so the text no longer claims neither.
+check("T58 all-account scope is fixed to recommended normal folders, and the run is bounded",
   /accounts\.flatMap\(\(account\) => account\.folders[\s\S]*?\.filter\(\(folder\) => folder\.recommended\)/u.test(bg)
-  && /No date or message limit\./u.test(actionCenter));
+  && /The folder scope is fixed; the date window and the message ceiling are set below\./u.test(actionCenter));
 
 check("T59 bulk archive supports stop and safe continuation after interruption",
   /cancelArchiveExisting/u.test(bg)
@@ -1106,6 +1109,21 @@ check("T127 panels load their data on arrival, not only when opened from the men
   && /async function loadArchiveExistingPanel\(\)/u.test(actionCenter)
   && (actionCenter.match(/addEventListener\("show"/gu) || []).length === 3
   && /dispatchEvent\(new Event\("show"\)\)/u.test(shellSource));
+
+// The PDF sweep was the half of decision r001 section 3 that had not been done: fixed
+// folder scope, but no date window and no count ceiling. It is bounded the same way now,
+// and the reconciliation gap the panel used to declare is gone because it is closed.
+check("T129 the PDF archive sweep is bounded too",
+  /function resolveArchiveExistingBounds\(/u.test(bg)
+  && /async function startArchiveExisting\(raw = \{\}\)/u.test(bg)
+  && /const config = \{ \.\.\.scope, \.\.\.resolveArchiveExistingBounds\(raw\) \};/u.test(bg)
+  && /job\.limitReached = true/u.test(bg)
+  && /queryInfo\.fromDate = job\.config\.fromDate/u.test(bg));
+
+check("T130 the sweep states its bound before the run starts, and claims no unlimited scope",
+  /at most \$\{Math\.trunc\(maxMessages\)\} messages examined, between/u.test(actionCenter)
+  && !/No date or message limit/u.test(actionCenter)
+  && !/no date limit and no count limit/iu.test(markupR005));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");

@@ -200,6 +200,7 @@ function cacheElements() {
     "historicalProgress", "historicalStatus", "historicalProcessed", "historicalAnalyzed", "historicalSkipped", "historicalFailed", "historicalJunkAdmitted", "historicalJunkNotAdmitted", "historicalCurrentFolder", "historicalProgressNote",
     "historicalCancelButton", "historicalStartButton",
     "archiveExistingButton", "archiveExistingDialog", "archiveExistingScope", "archiveExistingProgress", "archiveExistingStatus",
+    "archiveExistingDateFrom", "archiveExistingDateTo", "archiveExistingMaxMessages",
     "archiveExistingExamined", "archiveExistingPdfMessages", "archiveExistingRecognized", "archiveExistingArchived", "archiveExistingAlready",
     "archiveExistingSkipped", "archiveExistingPending", "archiveExistingFailed", "archiveExistingCurrentFolder", "archiveExistingNote",
     "archiveExistingCancelButton", "archiveExistingStartButton", "recordContextMenu", "toast"
@@ -1979,9 +1980,10 @@ function renderArchiveExistingState(archive = state.archiveExisting) {
 
   let note = "Existing-document archive has not started.";
   if (running) {
-    note = `Examined ${current.examined ?? 0} messages. You can leave this view; archiving continues while Thunderbird is running.`;
+    const limit = current.limit ? ` of at most ${current.limit}` : "";
+    note = `Examined ${current.examined ?? 0}${limit} messages. You can leave this view; archiving continues while Thunderbird is running.`;
   } else if (current.status === "completed") {
-    note = `Done: ${current.archived ?? 0} newly archived, ${current.alreadyArchived ?? 0} already archived or duplicate, ${current.pending ?? 0} pending, ${current.failed ?? 0} errors.`;
+    note = `Done: ${current.archived ?? 0} newly archived, ${current.alreadyArchived ?? 0} already archived or duplicate, ${current.pending ?? 0} pending, ${current.failed ?? 0} errors.${current.limitReached ? " The configured limit was reached." : ""}`;
   } else if (current.status === "cancelled") {
     note = `Stopped after ${current.examined ?? 0} messages. Continue is safe; existing hashes prevent duplicate files.`;
   } else if (current.status === "interrupted") {
@@ -2026,7 +2028,7 @@ async function loadArchiveExistingPanel() {
     state.archiveExistingScope = response.scope || null;
     setText(
       elements.archiveExistingScope,
-      `${response.scope?.folderCount ?? 0} normal folders across ${response.scope?.accountCount ?? 0} mail accounts. No date or message limit.`
+      `${response.scope?.folderCount ?? 0} normal folders across ${response.scope?.accountCount ?? 0} mail accounts. The folder scope is fixed; the date window and the message ceiling are set below.`
     );
     renderArchiveExistingState(response.archive);
     if (response.archive?.status === "running") startArchiveExistingPolling();
@@ -2049,11 +2051,26 @@ async function startArchiveExisting() {
     showToast("No normal mail folders are available.", true);
     return;
   }
-  const message = `Archive recognized PDF documents from all ${scope.folderCount} normal folders in ${scope.accountCount} mail accounts? Trash, Junk, Sent, Drafts, Templates and Outbox are excluded. Files are stored only in F:\\01_ARCHIVE\\CIVION.`;
+  const maxMessages = Number(elements.archiveExistingMaxMessages.value);
+  if (!Number.isFinite(maxMessages) || maxMessages < 1 || maxMessages > 20000) {
+    showToast("Maximum messages must be between 1 and 20000.", true);
+    return;
+  }
+  const bounds = resolvedHistoricalWindow(
+    elements.archiveExistingDateFrom.value,
+    elements.archiveExistingDateTo.value
+  );
+  const message = `Archive recognized PDF documents from all ${scope.folderCount} normal folders in ${scope.accountCount} mail accounts — at most ${Math.trunc(maxMessages)} messages examined, between ${bounds.from} and ${bounds.to}? Trash, Junk, Sent, Drafts, Templates and Outbox are excluded. Files are stored only in F:\\01_ARCHIVE\\CIVION.`;
   if (!window.confirm(message)) return;
   elements.archiveExistingStartButton.disabled = true;
   try {
-    const response = await send("startArchiveExisting");
+    const response = await send("startArchiveExisting", {
+      config: {
+        dateFrom: elements.archiveExistingDateFrom.value,
+        dateTo: elements.archiveExistingDateTo.value,
+        maxMessages: Math.trunc(maxMessages)
+      }
+    });
     renderArchiveExistingState(response.archive);
     startArchiveExistingPolling();
     showToast("Existing-document archive started.");
