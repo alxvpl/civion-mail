@@ -4,21 +4,36 @@
 rendered and driven outside Thunderbird. Every sender, address, amount and finding in it
 is invented; no real mail and no real personal data belongs in a fixture.
 
-Two things cannot be proven by reading source, and this is where they are checked:
+Three things cannot be proven by reading source:
 
-- that the identity snapshot arrives frozen, so no screen can keep an editable copy;
-- that changing a sender disposition updates Trust and the sender queue in Review
-  **without a reload**.
+- that the read-only snapshots arrive **deeply** frozen — a shallow freeze would still let
+  a screen edit an entry inside a list or rewrite a provenance, which is exactly the quiet
+  local drift the contract exists to prevent;
+- that changing a sender disposition updates Trust and Review **without a reload**;
+- that every derived screen is complete **on arrival**, rather than filling itself when
+  some other screen is visited first.
 
-`check-identity-refresh.mjs` does both. It needs `playwright` and the extension served
-over http — ES modules do not load from `file://`:
+Two scripts cover them. Both need `playwright` and the extension served over http — ES
+modules do not load from `file://`:
 
 ```
 npx --yes serve -l 8712 .          # or any static server rooted at the extension
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-identity-refresh.mjs
+BASE_URL=http://localhost:8712 node tests/ui-harness/check-snapshot-screens.mjs
 ```
 
-It exits non-zero on the first failed expectation and leaves the fixture as it found it.
+`check-identity-refresh.mjs` attacks the freeze at every level in strict mode — outside
+strict mode a write to a frozen object fails silently and a shallow freeze looks identical
+to a deep one — then blocks a domain from Trust and checks that Trust, the summary and the
+sender queue all move with zero navigations, and that clearing it restores the previous
+state.
+
+`check-snapshot-screens.mjs` opens each screen first in its own page, with nothing else
+visited, and requires it to be complete; then walks all of them in one page and requires
+every figure to be unchanged. That is what "fed by snapshots, no duplicate state" looks
+like from the outside.
+
+Both exit non-zero on the first failed expectation and leave the fixture as they found it.
 
 `tests/run-tests.mjs` needs no browser and covers everything else, including the pure
-derivations behind Today, Trust and the sender queue.
+derivations behind Today, Trust, the sender queue and Junk watch.

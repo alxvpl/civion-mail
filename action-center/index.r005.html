@@ -8,6 +8,7 @@
 <script src="ui-shell.mjs" type="module"></script>
 <script src="views-today.mjs" type="module"></script>
 <script src="views-identity.mjs" type="module"></script>
+<script src="views-review.mjs" type="module"></script>
 <script src="app.js" type="module"></script>
 </head>
 <body data-theme="system">
@@ -326,6 +327,7 @@
     <p>Decisions the machine is not allowed to make for you. Each one changes what the runtime does next.</p>
     <div aria-label="Review queues" class="tabs" role="tablist">
       <button aria-controls="reviewSenderPanel" aria-selected="true" class="tab" data-view="senders" id="tab-review-senders" role="tab" type="button">Sender identity</button>
+      <button aria-controls="reviewJunkPanel" aria-selected="false" class="tab" data-view="junk" id="tab-review-junk" role="tab" tabindex="-1" type="button">Junk watch</button>
     </div>
   </div>
   <div class="body">
@@ -337,7 +339,16 @@
         <div id="reviewSenderList"></div>
         <p class="pane-note" hidden="" id="reviewSenderEmpty">No sender is waiting on a decision.</p>
       </section>
-      <section class="pane"><p class="pane-note">Junk watch is not here yet. It needs the admission and history state the background keeps separately, and a queue that showed nothing while claiming to watch would be worse than an absent one.</p></section>
+    </div>
+
+    <div class="stack" data-view="junk" hidden="" id="reviewJunkPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-junk">
+      <section class="pane">
+        <header class="pane-h"><h2>Admitted from Junk</h2><span class="count" id="reviewJunkCount">0</span>
+          <span class="sub">why the gate let each one through</span></header>
+        <p class="pane-note" id="reviewJunkNotes"></p>
+      </section>
+      <div id="reviewJunkList"></div>
+      <p class="pane-note" hidden="" id="reviewJunkEmpty">No message has been admitted from Junk.</p>
     </div>
   </div>
 </section>

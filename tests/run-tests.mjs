@@ -9,6 +9,7 @@ import { evaluateJunkAdmission, collectPriorEvidence, ADMISSION_PATHS, MIN_PRIOR
 import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/document-archive.mjs";
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
 import { deriveTrust, deriveSenderReview } from "../action-center/views-identity.mjs";
+import { deriveJunkWatch } from "../action-center/views-review.mjs";
 import {
   summarise as summariseToday,
   decisionReason as decisionReasonToday,
@@ -307,9 +308,15 @@ check("T39 the gate runs before analysis and storage in the scan loop",
   bg.indexOf("evaluateJunkMessage(message, job)") < bg.indexOf("const record = await processMessage(message.folder || null, message, {")
   && /if \(!admission\.admitted\) \{[\s\S]*?job\.junkNotAdmitted \+= 1;[\s\S]*?continue;/u.test(bg));
 
+// The declaration moved out of the if-block when the admission result started travelling
+// onto the record, so the pattern is written against the assignment rather than the
+// declaration. What it guards is unchanged: both junk paths start at not-admitted, and a
+// gate that throws is logged and leaves that default standing.
 check("T40 an unevaluable gate fails closed rather than admitting",
-  /let admission = \{ admitted: false/u.test(bg)
-  && /JUNK_ADMISSION_EVALUATION_FAILED/u.test(bg));
+  (bg.match(/admission = \{ admitted: false, reasons: \["The admission gate could not be evaluated\."\] \};/gu) || []).length === 2
+  && (bg.match(/let admission = null;/gu) || []).length === 2
+  && /JUNK_ADMISSION_EVALUATION_FAILED/u.test(bg)
+  && !/catch[\s\S]{0,200}admitted: true/u.test(bg));
 
 check("T41 Path B evidence excludes junk folders across the whole account tree",
   /allJunkFolderIds:/u.test(bg) && /job\.config\.allJunkFolderIds/u.test(bg));
@@ -1102,6 +1109,7 @@ check("T125 running state is written into the menu item label, not over the whol
 const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
 const todaySource = readFileSync(new URL("../action-center/views-today.mjs", import.meta.url), "utf8");
 const identitySource = readFileSync(new URL("../action-center/views-identity.mjs", import.meta.url), "utf8");
+const reviewSource = readFileSync(new URL("../action-center/views-review.mjs", import.meta.url), "utf8");
 
 // Every chip app.js builds must carry the r005 base class and a tone, or the record rows
 // render as bare text under the r005 stylesheet.
@@ -1232,6 +1240,58 @@ check("T139 a view asks for an identity change and never performs one",
   && /type === "getIdentityState"/u.test(bg)
   && /provenance: "observed"/u.test(bg)
   && /provenance: "built-in"/u.test(bg));
+
+// Junk watch is its own read-only projection, and decision r002 section 3 is the line it
+// follows: a message that failed the gate received no verdict, so it exists here only as a
+// counter. A list of them would be the spam judgement the gate refuses to make.
+const junkSnapshot = {
+  admitted: [{
+    recordId: "r1",
+    sender: "Stroomnet Zuid",
+    subject: "Jaarafrekening",
+    admission: {
+      admitted: true,
+      path: "proven_history",
+      conditions: [{ id: "prior-records", label: "At least 2 prior non-junk records", result: "pass" }],
+      evidenceProvenance: { source: "local non-junk history", qualifyingRecords: 4, authenticatedRecords: 2 },
+      upstreamMarker: { observedAs: "junk", by: "the mail provider or Thunderbird" }
+    }
+  }],
+  notAdmitted: { messageCount: 12 },
+  admittedWithoutReasoning: 3,
+  userOverrides: { supported: false }
+};
+const junkView = deriveJunkWatch([{ id: "r1", sender: "Stroomnet Zuid" }], junkSnapshot);
+
+check("T140 Junk watch shows admitted records and the path that admitted each one",
+  junkView.admitted.length === 1
+  && junkView.admitted[0].pathLabel === "proven personal history"
+  && junkView.admitted[0].record?.id === "r1",
+  JSON.stringify(junkView.admitted.map((entry) => entry.pathLabel)));
+
+check("T141 not-admitted messages are a counter and never a list",
+  junkView.notAdmittedCount === 12
+  && !("notAdmitted" in junkView && Array.isArray(junkView.notAdmitted))
+  && !/notAdmitted:\s*\[/u.test(bg)
+  && /messageCount: Number\(operational\.junkNotAdmittedMessageCount/u.test(bg)
+  && /not a spam verdict/u.test(bg));
+
+check("T142 admitted records without recorded reasoning are counted, not given an invented one",
+  junkView.withoutReasoning === 3
+  && /admittedWithoutReasoning/u.test(bg)
+  && /admittedWithoutReasoning/u.test(reviewSource));
+
+check("T143 the junk projection is separate from identity, read-only, and freed of messenger",
+  /type === "getJunkAdmissionState"/u.test(bg)
+  && !/junkAdmission/u.test(identitySource)
+  && /deepFreeze\(response\.junk\)/u.test(actionCenter)
+  && !/messenger\./u.test(reviewSource)
+  && !/send\(/u.test(reviewSource));
+
+check("T144 the upstream junk marker is carried as an observation, never as trust",
+  /upstreamMarker/u.test(bg)
+  && /never evidence of trust/u.test(bg)
+  && /never evidence of trust/u.test(bg));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");

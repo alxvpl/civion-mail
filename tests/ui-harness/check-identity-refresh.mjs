@@ -33,23 +33,73 @@ await page.addInitScript({ path: STUB });
 await page.goto(`${BASE_URL}/action-center/index.r005.html`);
 await page.waitForTimeout(600);
 
-// The snapshot must arrive frozen, so no screen can keep an editable copy.
-const frozen = await page.evaluate(() => new Promise((resolve) => {
-  document.addEventListener("civion:identity-state", (event) => {
-    const snapshot = event.detail;
-    let threw = false;
-    try { snapshot.allowlistedDomains.push({ domain: "x.invalid", provenance: "user" }); }
-    catch { threw = true; }
-    resolve({
-      isFrozen: Object.isFrozen(snapshot),
-      nestedFrozen: Object.isFrozen(snapshot.allowlistedDomains),
-      mutationRefused: threw || snapshot.allowlistedDomains.every((entry) => entry.domain !== "x.invalid")
-    });
-  }, { once: true });
+// The snapshot must arrive DEEPLY frozen. A shallow freeze would still let a screen edit
+// an entry inside allowlistedDomains or rewrite a provenance, and the contract would allow
+// exactly the quiet local drift it exists to prevent. Every level is attacked here: the
+// root, the arrays, an entry object, and a nested array inside protectedIdentities.
+const probeFreeze = (snapshot) => {
+  // Strict mode matters: outside it, writing to a frozen object fails silently instead of
+  // throwing, and a shallow freeze would look identical to a deep one.
+  "use strict";
+  const attempt = (fn) => { try { fn(); return "mutated"; } catch { return "refused"; } };
+  const firstAllow = snapshot.allowlistedDomains[0];
+  const firstIdentity = snapshot.protectedIdentities[0];
+  return {
+    rootFrozen: Object.isFrozen(snapshot),
+    arrayFrozen: Object.isFrozen(snapshot.allowlistedDomains),
+    entryFrozen: Object.isFrozen(firstAllow),
+    nestedArrayFrozen: Object.isFrozen(firstIdentity.domains),
+    pushRefused: attempt(() => snapshot.allowlistedDomains.push({ domain: "x.invalid", provenance: "user" })),
+    entryEditRefused: attempt(() => { firstAllow.provenance = "user"; }),
+    nestedPushRefused: attempt(() => firstIdentity.domains.push("x.invalid")),
+    rootEditRefused: attempt(() => { snapshot.generatedAt = "tampered"; }),
+    stillClean: !snapshot.allowlistedDomains.some((entry) => entry.domain === "x.invalid")
+      && !firstIdentity.domains.includes("x.invalid")
+      && snapshot.generatedAt !== "tampered"
+  };
+};
+
+const frozen = await page.evaluate((source) => new Promise((resolve) => {
+  const probe = new Function(`return (${source})`)();
+  document.addEventListener("civion:identity-state", (event) => resolve(probe(event.detail)), { once: true });
   document.getElementById("refreshButton").click();
-}));
-expect("the identity snapshot is frozen when it reaches the screens",
-  frozen.isFrozen && frozen.nestedFrozen && frozen.mutationRefused, JSON.stringify(frozen));
+}), probeFreeze.toString());
+
+expect("the identity snapshot is deeply frozen when it reaches the screens",
+  frozen.rootFrozen && frozen.arrayFrozen && frozen.entryFrozen && frozen.nestedArrayFrozen
+  && frozen.pushRefused === "refused" && frozen.entryEditRefused === "refused"
+  && frozen.nestedPushRefused === "refused" && frozen.rootEditRefused === "refused"
+  && frozen.stillClean,
+  JSON.stringify(frozen));
+
+const probeJunkFreeze = (snapshot) => {
+  "use strict";
+  const attempt = (fn) => { try { fn(); return "mutated"; } catch { return "refused"; } };
+  const first = snapshot.admitted[0];
+  return {
+    rootFrozen: Object.isFrozen(snapshot),
+    arrayFrozen: Object.isFrozen(snapshot.admitted),
+    conditionFrozen: first ? Object.isFrozen(first.admission.conditions[0]) : true,
+    counterEditRefused: attempt(() => { snapshot.notAdmitted.messageCount = 0; }),
+    conditionEditRefused: first
+      ? attempt(() => { first.admission.conditions[0].result = "fail"; })
+      : "refused",
+    stillClean: snapshot.notAdmitted.messageCount !== 0
+      && (!first || first.admission.conditions[0].result !== "fail")
+  };
+};
+
+const junkFrozen = await page.evaluate((source) => new Promise((resolve) => {
+  const probe = new Function(`return (${source})`)();
+  document.addEventListener("civion:junk-admission-state", (event) => resolve(probe(event.detail)), { once: true });
+  document.getElementById("refreshButton").click();
+}), probeJunkFreeze.toString());
+
+expect("the junk admission snapshot is deeply frozen too",
+  junkFrozen.rootFrozen && junkFrozen.arrayFrozen && junkFrozen.conditionFrozen
+  && junkFrozen.counterEditRefused === "refused" && junkFrozen.conditionEditRefused === "refused"
+  && junkFrozen.stillClean,
+  JSON.stringify(junkFrozen));
 
 await page.click('.rail-btn[data-go="trust"]');
 await page.waitForTimeout(300);

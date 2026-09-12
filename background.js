@@ -1,5 +1,5 @@
 import { analyzeMessage, CATEGORY_ORDER, PRIORITIES, listAuthservIds, evaluateSenderAdmissionSignals } from "./modules/analyzer.mjs";
-import { evaluateJunkAdmission } from "./modules/junk-admission.mjs";
+import { evaluateJunkAdmission, ADMISSION_PATHS, MIN_PRIOR_RECORDS } from "./modules/junk-admission.mjs";
 import { RELATIONSHIP_CLASSES, DOCUMENT_TYPES, RETENTION_CLASSES } from "./modules/semantic-model.mjs";
 import { buildCivionMailPackage } from "./modules/federation.mjs";
 import {
@@ -1017,6 +1017,10 @@ async function processMessage(folder, message, options = {}) {
       analyzedAt: new Date().toISOString(),
       languageDetection: language,
       bodyStored: false,
+      // Additive, like typedFindings before it: a record written before the gate recorded
+      // its reasoning simply has no junkAdmission block, and Junk watch says so rather
+      // than inventing one. Only an admitted message reaches here at all.
+      ...(options.junkAdmission ? { junkAdmission: options.junkAdmission } : {}),
       ...analysis
     };
 
@@ -1136,8 +1140,9 @@ async function handleNewMail(folder, initialPage) {
     seen += 1;
     if (!accepted) continue;
     try {
+      let admission = null;
       if (isJunk) {
-        let admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
+        admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
         try {
           admission = await evaluateJunkMessage(message, allJunkFolderIds);
         } catch (error) {
@@ -1156,7 +1161,7 @@ async function handleNewMail(folder, initialPage) {
       // AUTO TAG mode. This path previously left `applyTag` unset, which means "apply".
       const record = await processMessage(folder, message, {
         folderAccepted: true,
-        ...(isJunk ? { applyTag: false } : {})
+        ...(isJunk ? { applyTag: false, junkAdmission: junkAdmissionRecordBlock(admission, admission.signals) } : {})
       });
       if (record) handled += 1;
       if (record?.analysisError) failed += 1;
@@ -1215,7 +1220,54 @@ async function evaluateJunkMessage(message, allJunkFolderIds = []) {
   const priorRecords = signals.domain
     ? (await getRecords()).filter((record) => senderDomainOf(record) === signals.domain)
     : [];
-  return evaluateJunkAdmission({ signals, priorRecords, junkFolderIds });
+  return { ...evaluateJunkAdmission({ signals, priorRecords, junkFolderIds }), signals };
+}
+
+/**
+ * What the gate decided, in a shape a record can carry and a screen can read. Only an
+ * admitted message gets one: r002 section 3 is explicit that a message which fails the
+ * gate receives no verdict, so there is nothing to write about it beyond a counter.
+ *
+ * The upstream junk marker is recorded as an observation. It is what the provider or
+ * Thunderbird thought, it is why the gate ran at all, and it is never evidence of trust.
+ */
+function junkAdmissionRecordBlock(admission, signals = {}) {
+  if (!admission?.admitted) return null;
+  const evidence = admission.evidence || {};
+  return {
+    admitted: true,
+    path: admission.path,
+    identity: admission.identity || null,
+    evaluatedAt: new Date().toISOString(),
+    reasons: [...(admission.reasons || [])],
+    // The conditions actually evaluated on this message, each with its own result, so the
+    // interface can show the ladder rather than a single yes.
+    conditions: admission.path === ADMISSION_PATHS.registryIdentity
+      ? [
+        { id: "protected-identity", label: "The sender claims a protected identity", result: "pass" },
+        { id: "domain-allowlisted", label: "The From domain is allowlisted for that identity", result: "pass" },
+        { id: "authenticated", label: "A trusted authentication service verified aligned control", result: "pass" }
+      ]
+      : [
+        { id: "message-authenticated", label: "This message passes authentication", result: signals.authenticationVerdict === "verified" ? "pass" : "fail" },
+        { id: "no-blocked-history", label: "No blocked record exists for the domain", result: evidence.blockedPresent ? "fail" : "pass" },
+        { id: "prior-records", label: `At least ${MIN_PRIOR_RECORDS} prior non-junk records`, result: (evidence.qualifyingCount ?? 0) >= MIN_PRIOR_RECORDS ? "pass" : "fail" },
+        { id: "prior-authenticated", label: "At least one prior non-junk record passed authentication", result: (evidence.verifiedCount ?? 0) >= 1 ? "pass" : "fail" }
+      ],
+    evidenceProvenance: admission.path === ADMISSION_PATHS.provenHistory
+      ? {
+        source: "local non-junk history for this sender domain",
+        qualifyingRecords: evidence.qualifyingCount ?? 0,
+        authenticatedRecords: evidence.verifiedCount ?? 0
+      }
+      : { source: "protected-identity registry shipped with the extension" },
+    upstreamMarker: {
+      observedAs: "junk",
+      by: "the mail provider or Thunderbird",
+      // Stated in the data, not only in the interface, so it cannot be read as trust.
+      note: "An observation about where the message was filed. It is never evidence of trust."
+    }
+  };
 }
 
 function senderDomainOf(record) {
@@ -1770,8 +1822,9 @@ async function processHistoricalBatch(job, messages) {
       // The gate runs before the existing-record branch. Ordered the other way, a record
       // created before the gate existed was refreshed and its source state reasserted
       // without ever being evaluated against Path A or Path B.
+      let admission = null;
       if (isJunkMessage) {
-        let admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
+        admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
         try {
           admission = await evaluateJunkMessage(message, job.config.allJunkFolderIds);
         } catch (error) {
@@ -1808,6 +1861,7 @@ async function processHistoricalBatch(job, messages) {
         folderAccepted: true,
         // Read-only over Junk: an admitted message is analysed and reported, never marked.
         applyTag: isJunkMessage ? false : job.config.applyTags,
+        ...(isJunkMessage ? { junkAdmission: junkAdmissionRecordBlock(admission, admission.signals) } : {}),
         updateBadge: false,
         emitBridge: false,
         archiveDocuments: false
@@ -2122,6 +2176,56 @@ async function getIdentityState() {
   };
 }
 
+/**
+ * Junk watch, as a projection rather than a store. It is deliberately not part of the
+ * identity snapshot: identity is about domains the person has decided on, this is about
+ * what the admission gate did to individual messages, and joining them in the background
+ * would hide which of the two a screen is actually showing.
+ *
+ * r002 section 3 draws the line this follows: a message that failed the gate received no
+ * verdict, so it appears here only in a counter. Turning those into a list would make the
+ * extension publish spam judgements it explicitly refuses to make.
+ */
+async function getJunkAdmissionState() {
+  const records = await getRecords();
+  const admitted = records
+    .filter((record) => record?.junkAdmission?.admitted === true)
+    .map((record) => ({
+      recordId: record.id,
+      identityKey: record.identityKey || null,
+      headerMessageId: record.headerMessageId || null,
+      sender: record.sender || "",
+      subject: record.subject || "",
+      receivedAt: record.receivedAt || null,
+      folderName: record.folderName || "",
+      admission: record.junkAdmission
+    }))
+    .sort((a, b) => Date.parse(b.receivedAt || 0) - Date.parse(a.receivedAt || 0));
+
+  const metadata = (await getState()).metadata || {};
+  const operational = metadata.operational || {};
+
+  return {
+    generatedAt: new Date().toISOString(),
+    admitted,
+    // Counters only. There is no not-admitted list, and there is no place in this contract
+    // to put one.
+    notAdmitted: {
+      messageCount: Number(operational.junkNotAdmittedMessageCount || 0),
+      note: "Not analysed is not a spam verdict. These messages were left alone and no judgement about them is stored."
+    },
+    // Records written before the gate recorded its reasoning carry no block; saying how
+    // many keeps the screen from implying it can explain every admitted record.
+    admittedWithoutReasoning: records
+      .filter((record) => record?.admittedFromJunk === true && !record?.junkAdmission)
+      .length,
+    userOverrides: {
+      supported: false,
+      note: "The runtime keeps no per-message override of the gate. A domain decision in Trust is the only lever, and it applies to every message from that domain."
+    }
+  };
+}
+
 async function setDomainDisposition(domainValue, disposition) {
   const domain = normalizeContextDomain(domainValue);
   if (!domain) throw new Error("Invalid sender domain.");
@@ -2267,6 +2371,9 @@ async function handleRuntimeMessage(request) {
   }
   if (type === "getIdentityState") {
     return { ok: true, identity: await getIdentityState() };
+  }
+  if (type === "getJunkAdmissionState") {
+    return { ok: true, junk: await getJunkAdmissionState() };
   }
   if (type === "setDomainDisposition") {
     const result = await setDomainDisposition(request.domain, request.disposition);

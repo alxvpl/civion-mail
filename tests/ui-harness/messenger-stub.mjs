@@ -99,7 +99,30 @@ const RECORDS = [
     categories: ["Utilities", "Payment"],
     receivedAt: "2026-09-06T09:05:00.000Z",
     admittedFromJunk: true,
-    markedIncorrect: true
+    markedIncorrect: true,
+    junkAdmission: {
+      admitted: true,
+      path: "proven_history",
+      identity: null,
+      evaluatedAt: "2026-09-06T09:05:02.000Z",
+      reasons: ["The sender domain has authenticated non-junk history in this mailbox."],
+      conditions: [
+        { id: "message-authenticated", label: "This message passes authentication", result: "pass" },
+        { id: "no-blocked-history", label: "No blocked record exists for the domain", result: "pass" },
+        { id: "prior-records", label: "At least 2 prior non-junk records", result: "pass" },
+        { id: "prior-authenticated", label: "At least one prior non-junk record passed authentication", result: "pass" }
+      ],
+      evidenceProvenance: {
+        source: "local non-junk history for this sender domain",
+        qualifyingRecords: 4,
+        authenticatedRecords: 2
+      },
+      upstreamMarker: {
+        observedAs: "junk",
+        by: "the mail provider or Thunderbird",
+        note: "An observation about where the message was filed. It is never evidence of trust."
+      }
+    }
   }),
   record({
     sender: "Huurdersbureau Meander",
@@ -206,6 +229,33 @@ const ANSWERS = {
   }),
   runSelfCheck: () => ({ ok: true, report: REPORT }),
   getIdentityState: () => ({ ok: true, identity: identitySnapshot() }),
+  getJunkAdmissionState: () => ({
+    ok: true,
+    junk: {
+      generatedAt: new Date().toISOString(),
+      admitted: RECORDS
+        .filter((entry) => entry.junkAdmission?.admitted === true)
+        .map((entry) => ({
+          recordId: entry.id,
+          identityKey: entry.identityKey || null,
+          headerMessageId: entry.headerMessageId || null,
+          sender: entry.sender,
+          subject: entry.subject,
+          receivedAt: entry.receivedAt,
+          folderName: "Junk",
+          admission: entry.junkAdmission
+        })),
+      notAdmitted: {
+        messageCount: 12,
+        note: "Not analysed is not a spam verdict. These messages were left alone and no judgement about them is stored."
+      },
+      admittedWithoutReasoning: 0,
+      userOverrides: {
+        supported: false,
+        note: "The runtime keeps no per-message override of the gate."
+      }
+    }
+  }),
   setDomainDisposition: (message) => {
     const domain = String(message?.domain || "").toLowerCase();
     USER_ALLOW.delete(domain);

@@ -1,6 +1,6 @@
-// CIVION Mail — Trust, and the sender queue inside Review.
+// CIVION Mail — Trust, and the derivations the Review sender queue is built from.
 //
-// Both surfaces are derived. There is no sender database in the Action Center: a row is
+// Trust is derived. There is no sender database in the Action Center: a row is
 // what the record set says about a domain, joined with the identity snapshot the
 // background publishes. Nothing here calls messenger, and nothing here writes. A change
 // is asked for with a civion:identity-command event; the background decides, and the next
@@ -132,7 +132,7 @@ function command(domain, disposition) {
   document.dispatchEvent(new CustomEvent("civion:identity-command", { detail: { domain, disposition } }));
 }
 
-function dispositionButtons(row) {
+export function dispositionButtons(row) {
   const wrap = document.createElement("div");
   wrap.className = "actions";
   wrap.style.margin = "0";
@@ -227,39 +227,8 @@ function renderTrust() {
     : "Identity state has not been read yet.";
 }
 
-function renderSenderReview() {
-  const list = $("reviewSenderList");
-  if (!list) return;
-  const items = deriveSenderReview(lastRecords, lastIdentity);
-  list.replaceChildren();
-  $("reviewSenderCount").textContent = String(items.length);
-  $("reviewSenderEmpty").hidden = items.length > 0;
-
-  for (const item of items) {
-    const row = document.createElement("div");
-    row.className = "setrow";
-
-    const left = document.createElement("div");
-    const label = document.createElement("div");
-    label.className = "lbl";
-    label.textContent = item.record.sender || item.domain;
-    const help = document.createElement("p");
-    help.className = "help";
-    help.textContent = `${item.domain} — ${item.reason}. Subject: ${item.record.subject || "(no subject)"}`;
-    left.append(label, help);
-
-    const controls = document.createElement("div");
-    controls.className = "ctl";
-    controls.append(dispositionButtons({ domain: item.domain, provenance: null }));
-
-    row.append(left, controls);
-    list.append(row);
-  }
-}
-
 function renderAll() {
   renderTrust();
-  renderSenderReview();
 }
 
 const hasDocument = typeof document !== "undefined";

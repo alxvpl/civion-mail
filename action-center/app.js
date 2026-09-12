@@ -1428,6 +1428,19 @@ async function publishIdentityState() {
   }
 }
 
+// Junk admission is its own read-only contract, not part of identity: identity is about
+// domains the person decided on, this is about what the gate did to individual messages.
+async function publishJunkAdmissionState() {
+  try {
+    const response = await send("getJunkAdmissionState");
+    document.dispatchEvent(new CustomEvent("civion:junk-admission-state", {
+      detail: deepFreeze(response.junk)
+    }));
+  } catch (error) {
+    showToast(`Junk admission state could not be read: ${error.message}`, true);
+  }
+}
+
 // A view asks for a change; it never performs one. The background decides and the next
 // snapshot is what the view sees, so Trust and Review cannot disagree with the runtime.
 document.addEventListener("civion:identity-command", (event) => {
@@ -1534,9 +1547,11 @@ async function loadState(reconfigure = true) {
   state.version = response.version || "0.1.15";
   if (reconfigure) configureControls();
   render();
-  // Every refresh republishes identity too, so a change to the allow or block list reaches
-  // Trust and Review on the same tick as the records, without a reload.
+  // Every refresh republishes the two read-only snapshots too, so a change to the allow or
+  // block list, or a newly admitted junk message, reaches Trust and Review on the same tick
+  // as the records, without a reload.
   void publishIdentityState();
+  void publishJunkAdmissionState();
 }
 
 function selectedRecord() {
