@@ -321,7 +321,7 @@ check("T43 the scan reports non-admission without calling it a spam verdict",
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 check("T44 manifest version and extension identity are intact",
-  manifest.version === "0.8.1"
+  manifest.version === "0.8.2"
   && manifest.browser_specific_settings.gecko.id === "mail-sentinel@local.invalid"
   && !("host_permissions" in manifest),
   `version=${manifest.version}`);
@@ -988,10 +988,13 @@ check("T115 the analyser adds no network, cloud or model call",
   && !/WebSocket/u.test(analyzerSource)
   && !/https?:\/\//u.test(analyzerSource.replace(/^\s*\/\/.*$/gmu, "")));
 
-check("T116 permissions and the content security policy are unchanged by 0.8.0",
+// The permission set is pinned deliberately: a new permission must fail this test and be
+// argued for, not slip in. "downloads" was removed once its only consumer was found to be
+// unreachable — the add-on writes no files, the Desktop layer does.
+check("T116 the extension asks for exactly this permission set and this CSP",
   JSON.stringify(manifest.permissions) === JSON.stringify([
     "accountsRead", "messagesRead", "messagesDelete", "messagesUpdate",
-    "messagesTags", "messagesTagsList", "storage", "menus", "downloads", "nativeMessaging"
+    "messagesTags", "messagesTagsList", "storage", "menus", "nativeMessaging"
   ])
   && manifest.content_security_policy.extension_pages
     === "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'",
@@ -1034,6 +1037,22 @@ check("T118 the deadline candidate declares only the fields CivionMailIngestion/
 check("T119 the temporal reading a deadline candidate may carry travels in deadline_type",
   ["Historical", "Explicit", "Inferred"].includes(bridgeDeadline.deadline_type),
   `deadline_type=${bridgeDeadline.deadline_type}`);
+
+// T26 closes one direction of the binding contract: every id cacheElements asks for exists
+// in the markup. This closes the other. An element used but never cached is silently
+// undefined until the first call reaches it, and then it throws in the middle of a render.
+// That is exactly how the observed authserv-id list stopped appearing: elements.
+// diagnosticsAuthserv was used three times and cached nowhere, so clearNode(undefined) threw
+// and took the rest of renderDiagnostics with it — the checks table, the account coverage and
+// the operational counters below it never rendered.
+const usedElementNames = [...new Set(
+  [...actionCenter.matchAll(/\belements\.([A-Za-z0-9_]+)\b/gu)].map((m) => m[1])
+)];
+const usedButNotCached = usedElementNames.filter((name) => !requestedIds.includes(name)).sort();
+
+check("T120 every element the code reads is cached, so none of them is undefined at runtime",
+  usedElementNames.length > 60 && usedButNotCached.length === 0,
+  `used=${usedElementNames.length} uncached=${usedButNotCached.join(",") || "none"}`);
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

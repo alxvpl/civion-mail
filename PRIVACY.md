@@ -59,7 +59,7 @@ Action Center може изрично да създаде локален candida
 
 ## Автоматичен локален Desktop bridge
 
-От v0.6.2 CIVION Mail използва Desktop-owned Native Messaging host `nl.civion.desktop` като основен unattended same-machine transport. Candidate пакетите запазват candidate-only authority. В v0.6.3 отделен `untrusted_evidence_only` пакет може да съдържа bounded exact RFC822 bytes, когато Thunderbird все още има съобщението. Transport-ът не е канонично приемане и не разрешава външни действия. Функцията може да бъде изключена от Settings. Старият Downloads spool остава read-compatible diagnostic канал само за candidate JSON пакети.
+От v0.6.2 CIVION Mail използва Desktop-owned Native Messaging host `nl.civion.desktop` като основен unattended same-machine transport. Candidate пакетите запазват candidate-only authority. В v0.6.3 отделен `untrusted_evidence_only` пакет може да съдържа bounded exact RFC822 bytes, когато Thunderbird все още има съобщението. Transport-ът не е канонично приемане и не разрешава външни действия. Функцията може да бъде изключена от Settings. Старият Downloads spool вече не се пише от добавката: `downloads` разрешението е свалено, защото след въвеждането на Native Messaging host-а нищо не го използваше. Останалите от по-стари версии файлове в него остават четими за Desktop слоя.
 
 PDF архивът от v0.6.8 никога не използва Downloads. Ако `F:\01_ARCHIVE\CIVION` не е достъпен, документът не се записва другаде: отбелязва се `pending` и може да бъде изпратен повторно. Няма облачно изпращане.
 
