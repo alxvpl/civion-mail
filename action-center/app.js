@@ -224,6 +224,13 @@ function showToast(message, isError = false) {
   }, 3600);
 }
 
+// An Operations menu item is a label plus the note that says what the operation does.
+// Writing textContent on the button itself deletes both and leaves a bare word for the
+// rest of the session, so state changes are written into the label alone.
+function menuItemLabel(button) {
+  return button.querySelector(".lbl, .menu-item-label") || button;
+}
+
 function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
@@ -1396,10 +1403,10 @@ function render() {
   const scanRunning = state.historicalScan?.status === "running";
   const archiveRunning = state.archiveExisting?.status === "running";
   elements.historicalScanButton.dataset.status = scanRunning ? "running" : "idle";
-  elements.historicalScanButton.textContent = scanRunning ? "Historical Scan · running" : "Historical Scan";
+  menuItemLabel(elements.historicalScanButton).textContent = scanRunning ? "Historical Scan · running" : "Historical Scan";
   elements.historicalScanButton.disabled = archiveRunning;
   elements.archiveExistingButton.dataset.status = archiveRunning ? "running" : "idle";
-  elements.archiveExistingButton.textContent = archiveRunning ? "Archive PDFs · running" : "Archive existing PDFs";
+  menuItemLabel(elements.archiveExistingButton).textContent = archiveRunning ? "Archive PDFs · running" : "Archive existing PDFs";
   elements.archiveExistingButton.disabled = scanRunning;
 
   const storagePressure = state.metadata.storagePressure === true;
@@ -1779,12 +1786,12 @@ function renderHistoricalScanState(scan = state.historicalScan) {
   elements.historicalStartButton.disabled = running;
   elements.historicalCancelButton.disabled = !running;
   elements.historicalScanButton.dataset.status = running ? "running" : "idle";
-  elements.historicalScanButton.textContent = running ? "Historical Scan · running" : "Historical Scan";
+  menuItemLabel(elements.historicalScanButton).textContent = running ? "Historical Scan · running" : "Historical Scan";
 
   let note = "Historical Scan has not started.";
   if (running) {
-    const limit = current.limit ? ` of maximum ${current.limit}` : " with no limit";
-    note = `Processed ${current.processed ?? 0}${limit}. You can close this window; the scan will continue while Thunderbird is running.`;
+    const limit = current.limit ? ` of at most ${current.limit}` : "";
+    note = `Processed ${current.processed ?? 0}${limit}. You can leave this view; the scan continues while Thunderbird is running.`;
   } else if (current.status === "completed") {
     const junkNote = (current.junkAdmitted ?? 0) || (current.junkNotAdmitted ?? 0)
       ? ` In Junk folders, ${current.junkAdmitted ?? 0} messages met the admission gate and ${current.junkNotAdmitted ?? 0} were left unanalyzed — not analyzed is not a spam verdict.`
@@ -1837,6 +1844,22 @@ async function openHistoricalScan() {
   }
 }
 
+// Mirrors the resolution the background does, so the confirmation names the same window
+// the run will use. Empty dates are the last twelve months; there is no whole-mailbox
+// option any more (decision r001 section 3).
+const HISTORICAL_DEFAULT_WINDOW_MONTHS = 12;
+
+function resolvedHistoricalWindow(rawFrom, rawTo) {
+  const iso = (date) => date.toISOString().slice(0, 10);
+  if (!rawFrom && !rawTo) {
+    const to = new Date();
+    const from = new Date(to.getTime());
+    from.setMonth(from.getMonth() - HISTORICAL_DEFAULT_WINDOW_MONTHS);
+    return { from: iso(from), to: iso(to) };
+  }
+  return { from: rawFrom || "the oldest message", to: rawTo || "today" };
+}
+
 async function startHistoricalScan() {
   const folderIds = historicalFolderCheckboxes().filter((box) => box.checked).map((box) => box.dataset.historicalFolderId);
   if (!folderIds.length) {
@@ -1844,12 +1867,15 @@ async function startHistoricalScan() {
     return;
   }
   const maxMessages = Number(elements.historicalMaxMessages.value);
-  if (!Number.isFinite(maxMessages) || maxMessages < 0 || maxMessages > 50000) {
-    showToast("Maximum messages must be between 0 and 50000.", true);
+  if (!Number.isFinite(maxMessages) || maxMessages < 1 || maxMessages > 20000) {
+    showToast("Maximum messages must be between 1 and 20000.", true);
     return;
   }
-  const scopeText = maxMessages === 0 ? "no limit" : `up to ${Math.trunc(maxMessages)} messages`;
-  if (!window.confirm(`Start Historical Scan for ${folderIds.length} selected folders (${scopeText})? Full message text will not be stored.`)) return;
+  // The dialog states the bound it is about to run under, resolved dates included, so
+  // nothing about the run is left implicit at the moment it starts.
+  const window12 = resolvedHistoricalWindow(elements.historicalDateFrom.value, elements.historicalDateTo.value);
+  const scopeText = `at most ${Math.trunc(maxMessages)} messages between ${window12.from} and ${window12.to}`;
+  if (!window.confirm(`Start Historical Scan for ${folderIds.length} selected folders — ${scopeText}? Full message text will not be stored.`)) return;
   elements.historicalStartButton.disabled = true;
   try {
     const response = await send("startHistoricalScan", {
@@ -1918,12 +1944,12 @@ function renderArchiveExistingState(archive = state.archiveExisting) {
     ? "Continue safely"
     : current.status === "completed" ? "Scan again" : "Start archive";
   elements.archiveExistingButton.dataset.status = running ? "running" : "idle";
-  elements.archiveExistingButton.textContent = running ? "Archive PDFs · running" : "Archive existing PDFs";
+  menuItemLabel(elements.archiveExistingButton).textContent = running ? "Archive PDFs · running" : "Archive existing PDFs";
   elements.historicalScanButton.disabled = running;
 
   let note = "Existing-document archive has not started.";
   if (running) {
-    note = `Examined ${current.examined ?? 0} messages. You can close this window; archiving continues while Thunderbird is running.`;
+    note = `Examined ${current.examined ?? 0} messages. You can leave this view; archiving continues while Thunderbird is running.`;
   } else if (current.status === "completed") {
     note = `Done: ${current.archived ?? 0} newly archived, ${current.alreadyArchived ?? 0} already archived or duplicate, ${current.pending ?? 0} pending, ${current.failed ?? 0} errors.`;
   } else if (current.status === "cancelled") {

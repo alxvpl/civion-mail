@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>CIVION Mail — Action Center</title>
+<link href="civion-mail-ui-r005.css" rel="stylesheet"/>
+<script src="ui-shell.mjs" type="module"></script>
+<script src="app.js" type="module"></script>
+</head>
+<body data-theme="system">
+<div class="app">
+
+<nav aria-label="Sections" class="rail">
+  <div class="wordmark">CIVION</div>
+  <button aria-current="true" class="rail-btn" data-go="records" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    <span>Records</span>
+  </button>
+  <button aria-current="false" class="rail-btn" data-go="system" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v11H4z"/><path d="M9 20h6M12 16v4"/></svg>
+    <span>System</span>
+  </button>
+  <div class="spacer"></div>
+  <button aria-current="false" class="rail-btn" data-go="settings" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>
+    <span>Settings</span>
+  </button>
+</nav>
+
+<!-- ============================ RECORDS ============================ -->
+<section class="screen" data-on="true" data-screen="records">
+  <div class="head">
+    <h1>Action Center</h1>
+    <p>Every message CIVION Mail has analysed on this device. Nothing here leaves the machine, and no original message is changed unless you ask for it.</p>
+  </div>
+  <div class="body">
+
+    <div aria-live="assertive" class="warn-bar" hidden="" id="storageWarning" role="alert"></div>
+
+    <section aria-label="Summary" class="stats">
+      <button aria-pressed="true" class="stat" data-quick="" id="statActiveButton" type="button"><b id="statActive">0</b><small>Active</small></button>
+      <button aria-pressed="false" class="stat" data-quick="urgent" id="statUrgentButton" type="button"><b id="statUrgent">0</b><small>Critical / High</small></button>
+      <button aria-pressed="false" class="stat" data-quick="dueSoon" id="statDueSoonButton" type="button"><b id="statDueSoon">0</b><small>Due within 3 days</small></button>
+      <button aria-pressed="false" class="stat" data-quick="new" id="statNewButton" type="button"><b id="statNew">0</b><small>New</small></button>
+    </section>
+
+    <section aria-label="Filters" class="toolbar">
+      <div class="toolbar-primary">
+        <label class="search">
+          <span class="fh">Search</span>
+          <input id="searchInput" placeholder="Search by sender, subject, or action" type="search"/>
+        </label>
+        <label class="fld"><span class="fh">Priority</span><select id="priorityFilter"><option value="">All</option></select></label>
+        <label class="fld"><span class="fh">Status</span><select id="statusFilter"><option value="">All</option></select></label>
+        <button aria-controls="advancedFilters" aria-expanded="false" class="btn" id="moreFiltersButton" type="button">More filters<span class="filter-count" hidden="" id="advancedFilterCount">0</span></button>
+        <span class="toolbar-spacer"></span>
+        <details class="menu" id="columnsMenu">
+          <summary class="btn">Columns ▾</summary>
+          <div class="menu-panel" id="columnsPanel"></div>
+        </details>
+        <button aria-pressed="false" class="btn" id="densityButton" title="Switch between comfortable and compact rows" type="button">Compact</button>
+        <button class="btn" id="refreshButton" type="button">Refresh</button>
+        <button class="btn" id="clearClosedButton" type="button">Clear closed</button>
+        <button class="btn primary" id="civionExportButton" type="button">CIVION candidate export</button>
+        <details class="menu" id="operationsMenu">
+          <summary class="btn">Operations ▾</summary>
+          <div class="menu-panel">
+            <button class="menu-item" id="historicalScanButton" type="button"><span class="lbl">Historical Scan</span><span class="note">Analyses the folders you select, bounded by a count and a date window. Empty dates mean the last twelve months.</span></button>
+            <button class="menu-item wide-scope" id="archiveExistingButton" type="button"><span class="lbl">Archive existing PDFs</span><span class="note">Sweeps every normal folder in every account. No date or count limit.</span></button>
+            <div class="menu-divider"></div>
+            <button class="menu-item" id="exportButton" type="button"><span class="lbl">Export JSON</span><span class="note">Writes the current record set to a file.</span></button>
+          </div>
+        </details>
+        <button class="btn" hidden="" id="diagnosticsButton" type="button">Diagnostics</button>
+        <button class="btn" hidden="" id="settingsButton" type="button">Settings</button>
+      </div>
+      <div class="toolbar-advanced" hidden="" id="advancedFilters">
+        <label class="fld"><span class="fh">Category</span><select id="categoryFilter"><option value="">All</option></select></label>
+        <label class="fld"><span class="fh">Relationship</span><select id="relationshipFilter"><option value="">All</option></select></label>
+        <label class="fld"><span class="fh">Document type</span><select id="documentTypeFilter"><option value="">All</option></select></label>
+        <label class="fld"><span class="fh">Retention</span><select id="retentionFilter"><option value="">All</option></select></label>
+        <label class="fld"><span class="fh">Original</span>
+          <select id="sourceFilter">
+            <option selected="" value="available">Available mail</option>
+            <option value="missing">Deleted / unavailable</option>
+            <option value="all">All retained records</option>
+          </select>
+        </label>
+        <label class="fld"><span class="fh">Date</span>
+          <select id="dateFilter">
+            <option value="">All</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="custom">Custom range…</option>
+          </select>
+        </label>
+        <div class="date-range-fields" hidden="" id="dateRangeFields">
+          <label class="fld"><span class="fh">From</span><input id="dateFrom" type="date"/></label>
+          <label class="fld"><span class="fh">To</span><input id="dateTo" type="date"/></label>
+        </div>
+      </div>
+    </section>
+
+    <div aria-live="polite" class="filter-status" hidden="" id="filterStatus">
+      <div class="active-filters" id="filterChips"></div>
+      <span class="txt" id="filterStatusText"></span>
+      <span class="acts">
+        <button class="btn small" hidden="" id="showAllRetainedButton" type="button">Show all retained records</button>
+        <button class="btn small" hidden="" id="clearFiltersButton" type="button">Clear filters</button>
+      </span>
+    </div>
+
+    <div class="split">
+
+      <section aria-label="Analysed messages" class="pane">
+        <table id="recordsTable">
+          <thead>
+            <tr>
+              <th aria-sort="none" data-column-key="deadline"><button class="sortbtn sort-button" data-sort-key="deadline" type="button">Deadline <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Deadline column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="received"><button class="sortbtn sort-button" data-sort-key="received" type="button">Date <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Date column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="priority"><button class="sortbtn sort-button" data-sort-key="priority" type="button">Priority <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Priority column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="sender"><button class="sortbtn sort-button" data-sort-key="sender" type="button">Sender <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Sender column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="subject"><button class="sortbtn sort-button" data-sort-key="subject" type="button">Subject <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Subject column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="action"><button class="sortbtn sort-button" data-sort-key="action" type="button">Required action <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Required action column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="categories"><button class="sortbtn sort-button" data-sort-key="categories" type="button">Categories <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Categories column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+              <th aria-sort="none" data-column-key="status"><button class="sortbtn sort-button" data-sort-key="status" type="button">Status <span aria-hidden="true" class="ind sort-indicator">↕</span></button><span aria-label="Resize Status column" aria-orientation="vertical" class="grip column-resizer" role="separator" tabindex="0"></span></th>
+            </tr>
+          </thead>
+          <tbody id="recordsBody"></tbody>
+        </table>
+        <div class="nothing" hidden="" id="emptyState">
+          <h2>CIVION Mail is ready.</h2>
+          <p>The extension analyses new incoming messages and shows them here. For manual analysis, select a message in Thunderbird and use the CIVION Mail button or the “Analyse this message” context-menu command.</p>
+        </div>
+        <div class="nothing" hidden="" id="filteredEmptyState">
+          <h2>No record matches the current view.</h2>
+          <p id="filteredEmptyDetail"></p>
+          <div class="actions">
+            <button class="btn" hidden="" id="filteredShowAllRetainedButton" type="button">Show all retained records</button>
+            <button class="btn primary" hidden="" id="filteredClearFiltersButton" type="button">Clear filters</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Detail. In 0.8.1 this was a modal dialog; here it is the second pane of the
+           split, and ui-shell.mjs gives it the dialog surface app.js still calls. -->
+      <section class="pane" id="detailPane">
+        <div class="empty-pane" id="detailEmpty">Select a record to see the evidence behind it.</div>
+        <div class="detail" hidden="" id="detailDialog">
+          <form id="detailForm">
+            <p class="dim" id="detailSender"></p>
+            <h3 id="detailSubject"></h3>
+            <div aria-label="Analysis status" class="hchips" id="detailHeaderChips"></div>
+            <p class="dim" id="detailModeNotice">Automatic local analysis. The original message is not modified.</p>
+
+            <div class="actions">
+              <button class="btn primary" id="openOriginalButton" type="button">Open original message</button>
+              <button class="btn" id="reanalyzeButton" type="button">Reanalyse</button>
+              <button class="btn" id="deleteOriginalButton" type="button">Delete email</button>
+            </div>
+
+            <div class="tier">
+              <h4>Summary</h4>
+              <div class="blk"><p id="detailSummary"></p></div>
+            </div>
+
+            <label class="fld"><span class="fh">Required action <small class="prov" id="detailActionSource"></small></span>
+              <textarea id="detailAction" maxlength="1000" rows="4"></textarea>
+            </label>
+
+            <div class="three">
+              <label class="fld"><span class="fh">Priority <small class="prov" id="detailPrioritySource"></small></span><select id="detailPriority"></select></label>
+              <label class="fld"><span class="fh">Status <small class="prov" id="detailStatusSource"></small></span><select id="detailStatus"></select></label>
+              <label class="fld"><span class="fh">Deadline <small class="prov" id="detailDeadlineSource"></small></span><input id="detailDeadline" type="date"/></label>
+            </div>
+
+            <div class="blk"><h5>Deadline evidence</h5><p id="detailDeadlineEvidence"></p></div>
+
+            <fieldset>
+              <legend><span class="fh">Categories <small class="prov" id="detailCategoriesSource"></small></span></legend>
+              <div class="checkgrid" id="detailCategories"></div>
+            </fieldset>
+
+            <label class="fld"><span class="fh">User notes <small class="prov" id="detailNotesSource"></small></span>
+              <textarea id="detailNotes" maxlength="4000" placeholder="Private notes for actions, context, or follow-up review" rows="4"></textarea>
+            </label>
+
+            <label class="check-line"><input id="detailIncorrect" type="checkbox"/><span>The analysis is incorrect or misleading</span></label>
+
+            <div class="tier">
+              <h4>What the analysis concluded</h4>
+              <div class="blk"><h5>Next step</h5><p id="detailNextStep"></p></div>
+              <div class="blk"><h5>Preliminary risk</h5><p id="detailRisk"></p><ul id="detailRiskReasons"></ul></div>
+              <div class="blk"><h5>Verification required</h5><p id="detailVerification"></p><ul id="detailDeadlineCandidates"></ul></div>
+              <div class="blk"><h5>Administrative findings</h5><ul id="detailTypedFindings"></ul></div>
+              <div class="blk"><h5>Mail authentication</h5><p id="detailAuthenticationVerdict"></p><ul id="detailAuthenticationMethods"></ul></div>
+            </div>
+
+            <dl class="sig">
+              <div><dt>Analysis confidence</dt><dd id="detailConfidence"></dd></div>
+              <div><dt>Amounts</dt><dd id="detailAmounts"></dd></div>
+              <div><dt>Reply expected</dt><dd id="detailReply"></dd></div>
+              <div><dt>Mandatory action</dt><dd id="detailMandatory"></dd></div>
+            </dl>
+            <div class="blk"><h5>Action evidence</h5><ul id="detailActionEvidence"></ul></div>
+            <div class="blk"><h5>Priority reasons</h5><ul id="detailPriorityReasons"></ul></div>
+            <div class="blk"><h5>Confidence reasons</h5><ul id="detailConfidenceReasons"></ul></div>
+
+            <div class="tier">
+              <h4>Semantic model</h4>
+              <dl class="field"><dt>Relationship</dt><dd id="detailRelationship"></dd></dl>
+              <dl class="field"><dt>Claimed relationship</dt><dd id="detailClaimedRelationship"></dd></dl>
+              <dl class="field"><dt>Document type</dt><dd id="detailDocumentType"></dd></dl>
+              <dl class="field"><dt>Retention</dt><dd id="detailRetention"></dd></dl>
+              <dl class="field"><dt>Reason</dt><dd id="detailRetentionReason"></dd></dl>
+              <dl class="field"><dt>Public Services</dt><dd id="detailCivicMap"></dd></dl>
+            </div>
+
+            <div class="blk"><h5>Important attachments</h5><ul id="detailAttachments"></ul></div>
+            <div class="blk"><h5>Document archive</h5><p id="detailArchive"></p><ul id="detailArchiveFiles"></ul></div>
+
+            <details class="tech">
+              <summary>Message and analysis details</summary>
+              <dl class="field"><dt>Account</dt><dd id="detailAccount"></dd></dl>
+              <dl class="field"><dt>Folder</dt><dd id="detailFolder"></dd></dl>
+              <dl class="field"><dt>Recipients</dt><dd id="detailRecipients"></dd></dl>
+              <dl class="field"><dt>Received</dt><dd id="detailReceived"></dd></dl>
+              <dl class="field"><dt>Analysed</dt><dd id="detailAnalyzed"></dd></dl>
+              <dl class="field"><dt>Mode</dt><dd id="detailAnalysisMode"></dd></dl>
+              <dl class="field"><dt>Manual changes</dt><dd id="detailManualState"></dd></dl>
+              <dl class="field"><dt>Language</dt><dd id="detailLanguage"></dd></dl>
+              <dl class="field"><dt>Availability</dt><dd id="detailAvailability"></dd></dl>
+            </details>
+
+            <div class="actions">
+              <button class="btn primary" id="saveDetailButton" type="button">Save</button>
+              <button class="btn" id="retryArchiveButton" type="button">Archive documents</button>
+              <button class="btn" data-close="detailDialog" type="button">Close</button>
+              <button class="btn" id="removeRecordButton" type="button">Remove analysis</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SYSTEM ============================ -->
+<section class="screen" data-screen="system">
+  <div class="head">
+    <h1>System</h1>
+    <p>Everything that runs over the mailbox rather than over one message: the two historical operations, and the health of the extension itself.</p>
+    <div aria-label="System views" class="tabs" role="tablist">
+      <button aria-controls="historicalScanDialog" aria-selected="true" class="tab" data-view="historical" id="tab-historical" role="tab" type="button">Historical Scan</button>
+      <button aria-controls="archiveExistingDialog" aria-selected="false" class="tab" data-view="archive" id="tab-archive" role="tab" tabindex="-1" type="button">PDF archive</button>
+      <button aria-controls="diagnosticsDialog" aria-selected="false" class="tab" data-view="health" id="tab-health" role="tab" tabindex="-1" type="button">Health</button>
+    </div>
+  </div>
+  <div class="body">
+
+    <!-- Historical Scan -->
+    <div aria-labelledby="tab-historical" class="stack" data-view="historical" id="historicalScanDialog" role="tabpanel" tabindex="0">
+      <section class="pane"><p class="pane-note">Scanning starts only after an explicit command. CIVION Mail reads the selected existing messages and stores only the standard analysis. Full message text is not stored. Thunderbird tags are not changed unless you enable that option below.</p></section>
+
+      <section class="pane">
+        <header class="pane-h">
+          <h2>Accounts and folders</h2>
+          <span class="sub">Normal folders are selected by default. Junk, Sent, Drafts, Templates and Trash only if you select them.</span>
+          <span class="right">
+            <button class="btn small" id="historicalRecommendedButton" type="button">Recommended</button>
+            <button class="btn small" id="historicalAllButton" type="button">All folders</button>
+            <button class="btn small" id="historicalNoneButton" type="button">None</button>
+          </span>
+        </header>
+        <div aria-live="polite" class="tree" id="historicalScope"></div>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Bounds</h2></header>
+        <div class="setrow">
+          <div><div class="lbl">Date range</div><p class="help">Leave empty and the run resolves to the last twelve months. There is no setting that means the entire mailbox.</p></div>
+          <div class="ctl">
+            <label class="fld"><span class="fh">From</span><input id="historicalDateFrom" type="date"/></label>
+            <label class="fld"><span class="fh">To</span><input id="historicalDateTo" type="date"/></label>
+          </div>
+        </div>
+        <div class="setrow">
+          <div><div class="lbl">Maximum messages</div><p class="help">A hard upper bound on the run. There is no value that means no limit.</p></div>
+          <div class="ctl"><input id="historicalMaxMessages" max="20000" min="1" step="100" type="number" value="2000"/></div>
+        </div>
+        <div class="setrow">
+          <div><div class="lbl">Options</div></div>
+          <div class="ctl">
+            <label class="check-row"><input id="historicalReanalyze" type="checkbox"/><span>Reanalyse existing records</span></label>
+            <label class="check-row"><input id="historicalApplyTags" type="checkbox"/><span>Apply Thunderbird priority tags</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" data-status="idle" id="historicalProgress">
+        <header class="pane-h"><h2>Progress</h2><span class="right"><b id="historicalStatus">Ready to start</b></span></header>
+        <div class="progress"><i style="width:0%"></i></div>
+        <dl class="kv">
+          <div><dt>Processed</dt><dd id="historicalProcessed">0</dd></div>
+          <div><dt>Newly analysed</dt><dd id="historicalAnalyzed">0</dd></div>
+          <div><dt>Already present</dt><dd id="historicalSkipped">0</dd></div>
+          <div><dt>Errors</dt><dd id="historicalFailed">0</dd></div>
+          <div><dt>Junk admitted</dt><dd id="historicalJunkAdmitted">0</dd></div>
+          <div><dt>Junk not admitted</dt><dd id="historicalJunkNotAdmitted">0</dd></div>
+          <div><dt>Current folder</dt><dd id="historicalCurrentFolder">—</dd></div>
+        </dl>
+        <p class="pane-note" id="historicalProgressNote">Historical Scan has not started.</p>
+      </section>
+
+      <div class="actions">
+        <button class="btn primary" id="historicalStartButton" type="button">Start Historical Scan</button>
+        <button class="btn" disabled="" id="historicalCancelButton" type="button">Stop scan</button>
+      </div>
+    </div>
+
+    <!-- Archive existing PDFs -->
+    <div aria-labelledby="tab-archive" class="stack" data-view="archive" hidden="" id="archiveExistingDialog" role="tabpanel" tabindex="0">
+      <div class="warn-bar">Reconciliation gap. This sweep still runs unbounded — every normal folder in every account, no date limit and no count limit — while the accepted design requires historical processing to be explicit and bounded. Historical Scan has been brought into line; this one has not. Until it is, treat a run as a whole-mailbox operation.</div>
+      <section class="pane"><p class="pane-note">Recognised PDFs are stored only below F:\01_ARCHIVE\CIVION, and the add-on itself writes nothing: it prepares the document and the Desktop layer validates and writes it. Trash, Junk, Sent, Drafts, Templates, Outbox, virtual and unified folders are excluded. Downloads is never used for document storage.</p></section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Fixed scope</h2></header>
+        <p class="pane-note" id="archiveExistingScope">Reading available accounts and folders…</p>
+      </section>
+
+      <section class="pane" data-status="idle" id="archiveExistingProgress">
+        <header class="pane-h"><h2>Progress</h2><span class="right"><b id="archiveExistingStatus">Ready to start</b></span></header>
+        <div class="progress"><i style="width:0%"></i></div>
+        <dl class="kv">
+          <div><dt>Messages examined</dt><dd id="archiveExistingExamined">0</dd></div>
+          <div><dt>Messages with PDFs</dt><dd id="archiveExistingPdfMessages">0</dd></div>
+          <div><dt>Recognised documents</dt><dd id="archiveExistingRecognized">0</dd></div>
+          <div><dt>Newly archived</dt><dd id="archiveExistingArchived">0</dd></div>
+          <div><dt>Already archived</dt><dd id="archiveExistingAlready">0</dd></div>
+          <div><dt>Without eligible PDF</dt><dd id="archiveExistingSkipped">0</dd></div>
+          <div><dt>Pending</dt><dd id="archiveExistingPending">0</dd></div>
+          <div><dt>Errors</dt><dd id="archiveExistingFailed">0</dd></div>
+          <div><dt>Current folder</dt><dd id="archiveExistingCurrentFolder">—</dd></div>
+        </dl>
+        <p class="pane-note" id="archiveExistingNote">Existing-document archive has not started.</p>
+      </section>
+
+      <div class="actions">
+        <button class="btn primary" id="archiveExistingStartButton" type="button">Start archive</button>
+        <button class="btn" disabled="" id="archiveExistingCancelButton" type="button">Stop</button>
+      </div>
+    </div>
+
+    <!-- Health -->
+    <div aria-labelledby="tab-health" class="stack" data-view="health" hidden="" id="diagnosticsDialog" role="tabpanel" tabindex="0">
+      <section class="pane" data-status="unknown" id="diagnosticsSummary">
+        <header class="pane-h"><h2 id="diagnosticsStatus">No check has been run</h2><span class="right dim" id="diagnosticsGenerated">—</span></header>
+        <dl class="kv">
+          <div><dt>Add-on</dt><dd id="diagAddon">—</dd></div>
+          <div><dt>Thunderbird</dt><dd id="diagThunderbird">—</dd></div>
+          <div><dt>Platform</dt><dd id="diagPlatform">—</dd></div>
+          <div><dt>Compatibility line</dt><dd id="diagCompatibility">—</dd></div>
+          <div><dt>Analysis provider</dt><dd id="diagProvider">—</dd></div>
+          <div><dt>New mail listener</dt><dd id="diagNewMailListener">—</dd></div>
+          <div><dt>Moved listener</dt><dd id="diagMovedListener">—</dd></div>
+          <div><dt>Deleted listener</dt><dd id="diagDeletedListener">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Checks</h2></header>
+        <div class="checks" id="diagnosticsChecks"></div>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Acceptance window</h2><span class="sub">After a reset, only events from the current live acceptance test are counted.</span></header>
+        <dl class="kv">
+          <div><dt>Gate status</dt><dd id="diagAcceptanceStatus">Not started</dd></div>
+          <div><dt>Started</dt><dd id="diagAcceptanceReset">—</dd></div>
+          <div><dt>Automatic gates</dt><dd id="diagAcceptanceGates">0 / 8</dd></div>
+          <div><dt>Background reactivations</dt><dd id="diagBackgroundActivations">0</dd></div>
+          <div><dt>Non-Inbox events</dt><dd id="diagFilteredFolderEvents">0</dd></div>
+          <div><dt>Junk excluded / analysed</dt><dd><span id="diagJunkExcluded">0</span> / <span id="diagJunkAnalyzed">0</span></dd></div>
+        </dl>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Observed authserv-id</h2><span class="sub">Token and message count only — no raw headers.</span></header>
+        <div class="checks" id="diagnosticsAuthserv"></div>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Coverage by account</h2><span class="sub">Observed means at least one successful analysis since the last counter reset.</span></header>
+        <table>
+          <thead><tr><th>Account</th><th>Type</th><th>Folders</th><th>Eligible</th><th>Events</th><th>Messages</th><th>Status</th></tr></thead>
+          <tbody id="diagnosticsAccountsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="pane">
+        <header class="pane-h"><h2>Operational counters</h2></header>
+        <dl class="kv">
+          <div><dt>New-mail events</dt><dd id="diagNewMailEvents">0</dd></div>
+          <div><dt>Messages seen</dt><dd id="diagMessagesSeen">0</dd></div>
+          <div><dt>Messages handled</dt><dd id="diagMessagesHandled">0</dd></div>
+          <div><dt>Analysis failures</dt><dd id="diagAnalysisFailures">0</dd></div>
+          <div><dt>Moved events</dt><dd id="diagMovedEvents">0</dd></div>
+          <div><dt>Deleted events</dt><dd id="diagDeletedEvents">0</dd></div>
+          <div><dt>Storage records</dt><dd id="diagStorageRecords">0</dd></div>
+          <div><dt>Storage pressure</dt><dd id="diagStoragePressure">No</dd></div>
+          <div><dt>Recovery entries</dt><dd id="diagRecoveryEntries">0</dd></div>
+          <div><dt>Migration status</dt><dd id="diagMigrationStatus">—</dd></div>
+        </dl>
+        <p class="pane-note">The diagnostic export carries no subject, sender, Message-ID or message content — only versions, API checks, provider state, migration status, counters, account types, folder counts and error codes. The recovery export is separate and may contain older local analyses.</p>
+      </section>
+
+      <div class="actions">
+        <button class="btn primary" id="runSelfCheckButton" type="button">Run self-check</button>
+        <button class="btn" id="exportDiagnosticsButton" type="button">Export diagnostics JSON</button>
+        <button class="btn" id="exportRecoveryButton" type="button">Export recovery JSON</button>
+        <button class="btn" id="resetAcceptanceButton" type="button">Start new acceptance test</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================ SETTINGS ============================ -->
+<section class="screen" data-screen="settings">
+  <div class="head">
+    <h1>Settings</h1>
+    <p>Each switch says what it changes. Nothing here reaches a network.</p>
+  </div>
+  <div class="body">
+    <div class="stack" id="settingsDialog">
+      <section class="pane"><p class="pane-note">Local mode. This version makes no network request and sends no message or attachment to any external service. The only outbound channel is the Native Messaging host on this machine, and only when the Desktop bridge below is on.</p></section>
+      <form id="settingsForm">
+
+        <section class="pane">
+          <header class="pane-h"><h2>Effects on your mailbox</h2></header>
+          <div class="setrow">
+            <div><div class="lbl">Automatic Thunderbird tagging</div><p class="help">Off by default. In Preview mode messages are analysed and displayed without their tags changing.</p></div>
+            <div class="ctl"><label class="check-row"><input id="settingAutoTag" type="checkbox"/><span>Enabled</span></label></div>
+          </div>
+          <div class="setrow">
+            <div><div class="lbl">CIVION Desktop bridge</div><p class="help">Sends candidate-only JSON packages through the local Native Messaging host. No network request is made.</p></div>
+            <div class="ctl"><label class="check-row"><input id="settingDesktopBridge" type="checkbox"/><span>Enabled</span></label></div>
+          </div>
+          <div class="setrow">
+            <div><div class="lbl">Archive recognised PDF documents</div><p class="help">Stores validated PDFs only below F:\01_ARCHIVE\CIVION. If drive F: is unavailable the document stays pending; there is no fallback to Downloads.</p></div>
+            <div class="ctl"><label class="check-row"><input id="settingDocumentArchive" type="checkbox"/><span>Enabled</span></label></div>
+          </div>
+          <div class="setrow">
+            <div><div class="lbl">Analyse new messages in Junk</div><p class="help">A junk message is admitted only through the registry identity path or a proven personal history, and the record always carries the marker.</p></div>
+            <div class="ctl"><label class="check-row"><input id="settingAnalyzeJunk" type="checkbox"/><span>Enabled</span></label></div>
+          </div>
+        </section>
+
+        <section class="pane">
+          <header class="pane-h"><h2>Storage and limits</h2></header>
+          <div class="setrow">
+            <div><div class="lbl">Closed-record retention</div><p class="help">Days a closed record is kept before it is eligible for removal.</p></div>
+            <div class="ctl"><input id="settingRetention" max="3650" min="7" step="1" type="number"/></div>
+          </div>
+          <div class="setrow">
+            <div><div class="lbl">Maximum number of records</div><p class="help">A soft target. Closed records go first; active records are never removed for the cap alone.</p></div>
+            <div class="ctl"><input id="settingMaxRecords" max="50000" min="100" step="100" type="number"/></div>
+          </div>
+        </section>
+
+        <section class="pane">
+          <header class="pane-h"><h2>Diagnostics</h2></header>
+          <div class="setrow">
+            <div><div class="lbl">Detailed diagnostic log</div><p class="help">Without message content. Credentials, tokens, full bodies and attachment text are never written.</p></div>
+            <div class="ctl"><label class="check-row"><input id="settingDiagnostics" type="checkbox"/><span>Enabled</span></label></div>
+          </div>
+        </section>
+
+        <section class="pane">
+          <header class="pane-h"><h2>Trust and identity</h2></header>
+          <div class="setrow">
+            <div><div class="lbl">Trusted authserv-id values</div><p class="help">The service identifier from the first Authentication-Results header your provider adds — see System → Health → Observed authserv-id. Without this list, authentication results are observational only and no sender is marked verified. Trust assumes your provider strips or renames foreign Authentication-Results headers; that is standard behaviour, but verify it for yours.</p></div>
+            <div class="ctl"><input id="settingTrustedAuthserv" placeholder="mx.provider.example, mail.provider.example" type="text"/></div>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button class="btn primary" id="saveSettingsButton" type="button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<div class="status">
+  <span class="pill local">LOCAL ONLY</span>
+  <span class="pill runtime" data-status="checking" id="runtimePill" title="Background process status">CHECKING</span>
+  <span class="pill mode" id="modePill" title="Analyses without changing tags by default">PREVIEW</span>
+  <span id="recordCount">0 records</span>
+  <span class="right">
+    <span id="versionLabel">—</span>
+    <span aria-label="Appearance" class="tabs" role="tablist" style="border:0;margin:0">
+      <button aria-selected="false" class="tab" data-theme-set="light" role="tab" tabindex="-1" type="button">Light</button>
+      <button aria-selected="false" class="tab" data-theme-set="dark" role="tab" tabindex="-1" type="button">Dark</button>
+      <button aria-selected="true" class="tab" data-theme-set="system" role="tab" type="button">System</button>
+    </span>
+  </span>
+</div>
+
+</div>
+
+<div class="ctx" hidden="" id="recordContextMenu"></div>
+<div aria-live="polite" class="toast" hidden="" id="toast" role="status"></div>
+</body>
+</html>

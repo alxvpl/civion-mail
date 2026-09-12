@@ -1054,5 +1054,46 @@ check("T120 every element the code reads is cached, so none of them is undefined
   usedElementNames.length > 60 && usedButNotCached.length === 0,
   `used=${usedElementNames.length} uncached=${usedButNotCached.join(",") || "none"}`);
 
+// Decision r001 section 3. The old configuration had two ways to run without a bound:
+// maxMessages 0 meant no limit, and two empty dates meant the whole mailbox. Neither may
+// come back, and the Action Center must state the resolved window before starting.
+const boundedLimit = /const maxMessages = Math\.min\(\s*HISTORICAL_SCAN_MAX_MESSAGES/u.test(bg)
+  && !/parsedLimit === 0/u.test(bg)
+  && /HISTORICAL_SCAN_DEFAULT_MESSAGES\s*=\s*\d+/u.test(bg);
+const boundedWindow = /if \(!fromDate && !toDate\)/u.test(bg)
+  && /HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS/u.test(bg);
+check("T121 a Historical Scan always has a count bound and a date window",
+  boundedLimit && boundedWindow,
+  `limit=${boundedLimit} window=${boundedWindow}`);
+
+check("T122 the Action Center states the resolved bound before the run starts",
+  /resolvedHistoricalWindow\(/u.test(actionCenter)
+  && /at most \$\{Math\.trunc\(maxMessages\)\} messages between/u.test(actionCenter)
+  && !/no limit/u.test(actionCenter)
+  && !/means no limit/u.test(markup));
+
+// The r005 shell is a second entry point into the same app.js, so it lives or dies by the
+// same binding contract. Keeping this here means the two markups can never drift apart.
+const markupR005 = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
+const r005Ids = [...markupR005.matchAll(/\sid="([^"]+)"/gu)].map((m) => m[1]);
+const r005Missing = requestedIds.filter((id) => !r005Ids.includes(id));
+const r005Duplicate = r005Ids.filter((id, index) => r005Ids.indexOf(id) !== index);
+check("T123 the r005 shell satisfies the same element contract as the shipped markup",
+  r005Missing.length === 0 && r005Duplicate.length === 0,
+  `missing=${r005Missing.join(",")} duplicate=${r005Duplicate.join(",")}`);
+
+// An Operations menu item carries a label and the note that explains what it does.
+// Writing textContent on the button deleted both the first time a run started, and the
+// note never came back until the panel was reloaded.
+check("T125 running state is written into the menu item label, not over the whole button",
+  /function menuItemLabel\(/u.test(actionCenter)
+  && !/elements\.(historicalScanButton|archiveExistingButton)\.textContent/u.test(actionCenter)
+  && (actionCenter.match(/menuItemLabel\(elements\.\w+\)\.textContent/gu) || []).length === 4);
+
+// The shell must not grow a second copy of the record logic. It routes and it themes.
+const shell = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
+check("T124 the shell owns navigation only — no record state, no messenger calls",
+  !/messenger\./u.test(shell) && !/records/u.test(shell.replace(/data-screen="records"|go\("records"\)|"records"/gu, "")));
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

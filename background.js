@@ -83,7 +83,11 @@ const listenerState = {
 };
 
 const HISTORICAL_SCAN_BATCH_SIZE = 10;
-const HISTORICAL_SCAN_MAX_MESSAGES = 50000;
+const HISTORICAL_SCAN_MAX_MESSAGES = 20000;
+const HISTORICAL_SCAN_DEFAULT_MESSAGES = 2000;
+// Empty dates used to mean the whole mailbox. They now resolve to this window, and the
+// Action Center states the resolved dates in the confirmation before the run starts.
+const HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS = 12;
 const DESKTOP_NATIVE_HOST = "nl.civion.desktop";
 const DESKTOP_NATIVE_INBOX = "mail-native-inbox";
 const DESKTOP_BRIDGE_VERSION = "0.2";
@@ -1670,13 +1674,22 @@ async function validateHistoricalScanConfig(raw = {}) {
     .map(String)
     .filter((id) => validFolders.has(id)))];
   if (!folderIds.length) throw new Error("Select at least one folder for Historical Scan.");
+  // Decision r001 section 3: historical processing is bounded. No value means "no
+  // limit" any more, and empty dates resolve to a stated window instead of the whole
+  // mailbox, so the run always has both a real count ceiling and a real date floor.
   const parsedLimit = Number(raw.maxMessages);
-  const maxMessages = parsedLimit === 0
-    ? 0
-    : Math.min(HISTORICAL_SCAN_MAX_MESSAGES, Math.max(1, Number.isFinite(parsedLimit) ? Math.trunc(parsedLimit) : 5000));
-  const fromDate = parseHistoricalDate(raw.dateFrom, false);
-  const toDate = parseHistoricalDate(raw.dateTo, true);
+  const maxMessages = Math.min(
+    HISTORICAL_SCAN_MAX_MESSAGES,
+    Math.max(1, Number.isFinite(parsedLimit) && parsedLimit >= 1 ? Math.trunc(parsedLimit) : HISTORICAL_SCAN_DEFAULT_MESSAGES)
+  );
+  let fromDate = parseHistoricalDate(raw.dateFrom, false);
+  let toDate = parseHistoricalDate(raw.dateTo, true);
   if (fromDate && toDate && fromDate >= toDate) throw new Error("The start date must be before the end date.");
+  if (!fromDate && !toDate) {
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime());
+    fromDate.setMonth(fromDate.getMonth() - HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS);
+  }
   return {
     folderIds,
     maxMessages,
