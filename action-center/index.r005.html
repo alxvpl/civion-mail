@@ -357,14 +357,31 @@
     <h1>Review</h1>
     <p>Decisions the machine is not allowed to make for you. Each one changes what the runtime does next.</p>
     <div aria-label="Review queues" class="tabs" role="tablist">
-      <button aria-controls="reviewSenderPanel" aria-selected="true" class="tab" data-view="senders" id="tab-review-senders" role="tab" type="button">Sender identity</button>
-      <button aria-controls="reviewJunkPanel" aria-selected="false" class="tab" data-view="junk" id="tab-review-junk" role="tab" tabindex="-1" type="button">Junk watch</button>
+      <button aria-controls="reviewUncertainPanel" aria-selected="true" class="tab" data-view="uncertain" id="tab-review-uncertain" role="tab" type="button">Uncertain reading <span class="count warn" id="reviewUncertainCount">0</span></button>
+      <button aria-controls="reviewSenderPanel" aria-selected="false" class="tab" data-view="senders" id="tab-review-senders" role="tab" tabindex="-1" type="button">Sender identity <span class="count" id="reviewSenderCount">0</span></button>
+      <button aria-controls="reviewJunkPanel" aria-selected="false" class="tab" data-view="junk" id="tab-review-junk" role="tab" tabindex="-1" type="button">Junk watch <span class="count" id="reviewJunkCount">0</span></button>
+      <button aria-controls="reviewUnreadablePanel" aria-selected="false" class="tab" data-view="unreadable" id="tab-review-unreadable" role="tab" tabindex="-1" type="button">Could not be read <span class="count" id="reviewUnreadableCount">0</span></button>
+      <span class="tab-group-rule"></span>
+      <button aria-controls="reviewIncorrectPanel" aria-selected="false" class="tab" data-view="incorrect" id="tab-review-incorrect" role="tab" tabindex="-1" type="button">Marked incorrect <span class="count" id="reviewIncorrectCount">0</span></button>
+      <button aria-controls="reviewRejectedPanel" aria-selected="false" class="tab" data-view="rejected" id="tab-review-rejected" role="tab" tabindex="-1" type="button">Rejected by you <span class="count" id="reviewRejectedCount">0</span></button>
+      <button aria-controls="reviewRulesPanel" aria-selected="false" class="tab" data-view="rules" id="tab-review-rules" role="tab" tabindex="-1" type="button">Newly acting rule <span class="count" id="reviewRulesCount">0</span></button>
     </div>
   </div>
   <div class="body">
-    <div class="stack" data-view="senders" id="reviewSenderPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-senders">
+    <div class="stack" data-view="uncertain" id="reviewUncertainPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-uncertain">
       <section class="pane">
-        <header class="pane-h"><h2>Sender identity</h2><span class="count warn" id="reviewSenderCount">0</span>
+        <header class="pane-h"><h2>Uncertain reading</h2>
+          <span class="sub">the same finding Dates marks as unsettled, addressed the same way</span>
+          <span class="right"><button class="btn small" data-go="dates" type="button">Open Dates</button></span></header>
+        <div id="reviewUncertainList"></div>
+        <p class="pane-note" hidden="" id="reviewUncertainEmpty">No reading is waiting on your confirmation.</p>
+      </section>
+      <section class="pane"><p class="pane-note">A reading here is not treated as operational. Rejecting one keeps it visible under “Rejected by you” rather than deleting it, so nothing disappears without a trace.</p></section>
+    </div>
+
+    <div class="stack" data-view="senders" hidden="" id="reviewSenderPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-senders">
+      <section class="pane">
+        <header class="pane-h"><h2>Sender identity</h2>
           <span class="sub">a domain with no decision of yours behind it</span>
           <span class="right"><button class="btn small" data-go="trust" type="button">Open Trust</button></span></header>
         <div id="reviewSenderList"></div>
@@ -372,9 +389,46 @@
       </section>
     </div>
 
+    <div class="stack" data-view="unreadable" hidden="" id="reviewUnreadablePanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-unreadable">
+      <section class="pane">
+        <header class="pane-h"><h2>Could not be read</h2>
+          <span class="sub">a failure is a failure, never “no action required”</span></header>
+        <div id="reviewUnreadableList"></div>
+        <p class="pane-note" hidden="" id="reviewUnreadableEmpty">Every held message was read.</p>
+      </section>
+    </div>
+
+    <div class="stack" data-view="incorrect" hidden="" id="reviewIncorrectPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-incorrect">
+      <section class="pane">
+        <header class="pane-h"><h2>Marked incorrect</h2>
+          <span class="sub">a record of what you told the analysis it got wrong, not a queue of work</span></header>
+        <div id="reviewIncorrectList"></div>
+        <p class="pane-note" hidden="" id="reviewIncorrectEmpty">You have not marked any analysis as incorrect.</p>
+      </section>
+    </div>
+
+    <div class="stack" data-view="rejected" hidden="" id="reviewRejectedPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-rejected">
+      <section class="pane">
+        <header class="pane-h"><h2>Rejected by you</h2>
+          <span class="sub">kept, so a rejection is never silently undone</span></header>
+        <div id="reviewRejectedList"></div>
+        <p class="pane-note" hidden="" id="reviewRejectedEmpty">You have not rejected any reading.</p>
+      </section>
+    </div>
+
+    <div class="stack" data-view="rules" hidden="" id="reviewRulesPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-rules">
+      <section class="pane">
+        <header class="pane-h"><h2>Newly acting rule</h2>
+          <span class="sub">an analyser identity this mailbox has records from that you have not acknowledged</span></header>
+        <div id="reviewRulesList"></div>
+        <p class="pane-note" hidden="" id="reviewRulesEmpty">Every rule set that has acted on this mailbox is acknowledged.</p>
+      </section>
+      <section class="pane"><p class="pane-note">Acknowledging changes no record. It only says you have seen that this rule set has been acting, so a later change of behaviour is visible rather than silent.</p></section>
+    </div>
+
     <div class="stack" data-view="junk" hidden="" id="reviewJunkPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-junk">
       <section class="pane">
-        <header class="pane-h"><h2>Admitted from Junk</h2><span class="count" id="reviewJunkCount">0</span>
+        <header class="pane-h"><h2>Admitted from Junk</h2>
           <span class="sub">why the gate let each one through</span></header>
         <p class="pane-note" id="reviewJunkNotes"></p>
       </section>

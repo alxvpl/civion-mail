@@ -9,7 +9,14 @@ import { evaluateJunkAdmission, collectPriorEvidence, ADMISSION_PATHS, MIN_PRIOR
 import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/document-archive.mjs";
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
 import { deriveTrust, deriveSenderReview } from "../action-center/views-identity.mjs";
-import { deriveJunkWatch } from "../action-center/views-review.mjs";
+import {
+  deriveJunkWatch,
+  deriveUncertain,
+  deriveUnreadable,
+  deriveMarkedIncorrect,
+  deriveRejected,
+  deriveNewRules
+} from "../action-center/views-review.mjs";
 import { deriveDates, countDates, DATE_FILTERS } from "../action-center/views-dates.mjs";
 import {
   summarise as summariseToday,
@@ -1414,6 +1421,84 @@ check("T155 Dates takes now as an argument and calls no messenger",
   && !/Date\.now\(\)/u.test(datesSource.slice(0, datesSource.indexOf("---------------------------------------------------------------- rendering")))
   && !/messenger\./u.test(datesSource)
   && !/send\(/u.test(datesSource));
+
+// The rest of Review. Three queues are derivable from the records; two are backed by
+// runtime state the background owns. Uncertain reading is built from the Dates rows, so
+// the two screens address the same reading the same way and cannot drift apart.
+const REVIEW_NOW = Date.parse("2026-09-12T09:00:00");
+const REVIEW_RECORDS = [
+  {
+    id: "unsettled", status: "New", sender: "Zorgpolis", subject: "Wijziging",
+    needsVerification: ["deadline"],
+    typedFindings: [
+      { id: "deadline:2026-12-31", type: "deadline", temporalRole: "due_by", date: "2026-12-31", actionRequired: true, needsVerification: true, dateAlternatives: [], evidence: "voor 31-12" },
+      { id: "information:2027-01-01", type: "information", temporalRole: "effective_or_informational_date", date: "2027-01-01", actionRequired: false, needsVerification: false, dateAlternatives: [], evidence: "per 1 januari" }
+    ]
+  },
+  { id: "broken", status: "New", sender: "Onbekend", subject: "Onleesbaar", analysisError: true },
+  { id: "gone", status: "New", sender: "Verdwenen", subject: "Weg", messageAvailable: false },
+  { id: "flagged", status: "Waiting", sender: "Stroomnet", subject: "Jaarafrekening", markedIncorrect: true },
+  { id: "closed-broken", status: "Completed", sender: "Oud", subject: "Afgesloten", analysisError: true }
+];
+const REVIEW_STATE = {
+  rejections: [{ key: "unsettled::deadline:2026-12-31", recordId: "unsettled", findingId: "deadline:2026-12-31", rejectedAt: "2026-09-12T08:00:00.000Z" }],
+  rules: [
+    { id: "local-rules-0.8.0", label: "Local rules 0.8.0", recordCount: 5, firstSeenAt: "2026-09-04T13:55:00.000Z", acknowledged: false },
+    { id: "local-rules-0.7.2", label: "Local rules 0.7.2", recordCount: 1, firstSeenAt: "2026-08-30T10:12:00.000Z", acknowledged: true }
+  ]
+};
+
+const uncertainOpen = deriveUncertain(REVIEW_RECORDS, REVIEW_NOW, new Set());
+check("T156 Uncertain reading is the Dates rows that are unsettled, addressed identically",
+  uncertainOpen.length === 1
+  && uncertainOpen[0].key === "unsettled::deadline:2026-12-31"
+  && uncertainOpen[0].recordId === "unsettled"
+  && uncertainOpen[0].findingId === "deadline:2026-12-31"
+  && deriveDates(REVIEW_RECORDS, REVIEW_NOW).some((row) => row.id === uncertainOpen[0].key && row.unsettled),
+  uncertainOpen.map((item) => item.key).join(" "));
+
+check("T157 a rejected reading leaves Uncertain and is kept, not deleted",
+  deriveUncertain(REVIEW_RECORDS, REVIEW_NOW, new Set(["unsettled::deadline:2026-12-31"])).length === 0
+  && deriveRejected(REVIEW_RECORDS, REVIEW_STATE).length === 1
+  && deriveRejected(REVIEW_RECORDS, REVIEW_STATE)[0].findingId === "deadline:2026-12-31");
+
+check("T158 a rejection whose record is gone is still shown, so it is never silently undone",
+  deriveRejected([], REVIEW_STATE)[0].present === false
+  && /never silently undone|no longer held/u.test(reviewSource));
+
+const unreadable = deriveUnreadable(REVIEW_RECORDS);
+check("T159 Could not be read holds failures and missing originals, and no closed record",
+  unreadable.length === 2
+  && unreadable.some((item) => item.recordId === "broken")
+  && unreadable.some((item) => item.recordId === "gone")
+  && !unreadable.some((item) => item.recordId === "closed-broken"),
+  unreadable.map((item) => item.recordId).join(" "));
+
+check("T160 Marked incorrect is a record of what you said, not a queue of work",
+  deriveMarkedIncorrect(REVIEW_RECORDS).length === 1
+  && deriveMarkedIncorrect(REVIEW_RECORDS)[0].recordId === "flagged"
+  && /not a queue of work/u.test(reviewSource));
+
+check("T161 Newly acting rule lists only what you have not acknowledged",
+  deriveNewRules(REVIEW_STATE).length === 1
+  && deriveNewRules(REVIEW_STATE)[0].id === "local-rules-0.8.0"
+  && deriveNewRules({ rules: [] }).length === 0);
+
+check("T162 the two state-backed queues are owned by the background and only read here",
+  /type === "getReviewState"/u.test(bg)
+  && /type === "setReviewRejection"/u.test(bg)
+  && /type === "acknowledgeRule"/u.test(bg)
+  && /reviewRejections/u.test(bg)
+  && /acknowledgedRules/u.test(bg)
+  && /deepFreeze\(response\.review\)/u.test(actionCenter)
+  && /dispatchEvent\(new CustomEvent\("civion:review-command"/u.test(reviewSource)
+  && !/messenger\./u.test(reviewSource)
+  && !/send\(/u.test(reviewSource));
+
+check("T163 a rejection is keyed by record and finding, and kept outside the record",
+  /REVIEW_REJECTION_KEY = \(recordId, findingId\)/u.test(bg)
+  && /metadata\.reviewRejections/u.test(bg)
+  && !/record\.reviewRejections/u.test(bg));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");

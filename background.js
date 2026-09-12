@@ -2226,6 +2226,85 @@ async function getJunkAdmissionState() {
   };
 }
 
+// Three of the five Review queues are derivable from the records alone. Two are not:
+// a reading you rejected, and a rule that has only just started acting on your mail. Both
+// are decisions or observations about the runtime rather than about a message, so they
+// live here, in metadata, and reach the Action Center only as this snapshot.
+//
+// Rejections are keyed by record and finding, the same identity Dates uses, so the two
+// screens cannot end up describing the same reading differently. They are kept in
+// metadata rather than on the record so that re-analysis cannot quietly discard them.
+const REVIEW_REJECTION_KEY = (recordId, findingId) => `${recordId}::${findingId}`;
+
+async function getReviewState() {
+  const records = await getRecords();
+  const metadata = (await getState()).metadata || {};
+  const rejections = metadata.reviewRejections || {};
+  const acknowledged = metadata.acknowledgedRules || {};
+
+  // What the analyser identities actually are, and when each first produced a record.
+  // "Newly acting" is not a guess: it is a rule this mailbox has records from that the
+  // person has not acknowledged yet.
+  const rules = new Map();
+  for (const record of records) {
+    const provider = record.analysisProvider || {};
+    const id = provider.id || "unknown";
+    const at = Date.parse(record.analyzedAt || record.receivedAt || 0);
+    let rule = rules.get(id);
+    if (!rule) {
+      rule = { id, label: provider.label || id, recordCount: 0, firstSeenAt: null, lastSeenAt: null };
+      rules.set(id, rule);
+    }
+    rule.recordCount += 1;
+    if (Number.isFinite(at)) {
+      if (rule.firstSeenAt === null || at < rule.firstSeenAt) rule.firstSeenAt = at;
+      if (rule.lastSeenAt === null || at > rule.lastSeenAt) rule.lastSeenAt = at;
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    rejections: Object.entries(rejections).map(([key, value]) => ({
+      key,
+      recordId: String(key).split("::")[0],
+      findingId: String(key).split("::").slice(1).join("::") || null,
+      rejectedAt: value?.at || null,
+      reason: value?.reason || ""
+    })),
+    rules: [...rules.values()].map((rule) => ({
+      ...rule,
+      firstSeenAt: rule.firstSeenAt ? new Date(rule.firstSeenAt).toISOString() : null,
+      lastSeenAt: rule.lastSeenAt ? new Date(rule.lastSeenAt).toISOString() : null,
+      acknowledged: Boolean(acknowledged[rule.id]),
+      acknowledgedAt: acknowledged[rule.id]?.at || null
+    })).sort((a, b) => String(b.firstSeenAt).localeCompare(String(a.firstSeenAt)))
+  };
+}
+
+async function setReviewRejection(recordId, findingId, rejected, reason = "") {
+  const id = String(recordId || "").trim();
+  const finding = String(findingId || "").trim();
+  if (!id || !finding) throw new Error("A rejection needs both a record and a finding.");
+  const key = REVIEW_REJECTION_KEY(id, finding);
+  await updateMetadata((metadata) => {
+    const next = { ...(metadata.reviewRejections || {}) };
+    if (rejected) next[key] = { at: new Date().toISOString(), reason: String(reason || "").slice(0, 400) };
+    else delete next[key];
+    return { ...metadata, reviewRejections: next };
+  });
+  return { key, rejected: Boolean(rejected) };
+}
+
+async function acknowledgeRule(ruleId) {
+  const id = String(ruleId || "").trim();
+  if (!id) throw new Error("A rule acknowledgement needs a rule identity.");
+  await updateMetadata((metadata) => ({
+    ...metadata,
+    acknowledgedRules: { ...(metadata.acknowledgedRules || {}), [id]: { at: new Date().toISOString() } }
+  }));
+  return { ruleId: id };
+}
+
 async function setDomainDisposition(domainValue, disposition) {
   const domain = normalizeContextDomain(domainValue);
   if (!domain) throw new Error("Invalid sender domain.");
@@ -2374,6 +2453,17 @@ async function handleRuntimeMessage(request) {
   }
   if (type === "getJunkAdmissionState") {
     return { ok: true, junk: await getJunkAdmissionState() };
+  }
+  if (type === "getReviewState") {
+    return { ok: true, review: await getReviewState() };
+  }
+  if (type === "setReviewRejection") {
+    const result = await setReviewRejection(request.recordId, request.findingId, request.rejected, request.reason);
+    return { ok: true, ...result };
+  }
+  if (type === "acknowledgeRule") {
+    const result = await acknowledgeRule(request.ruleId);
+    return { ok: true, ...result };
   }
   if (type === "setDomainDisposition") {
     const result = await setDomainDisposition(request.domain, request.disposition);

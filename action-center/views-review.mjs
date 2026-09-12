@@ -1,8 +1,13 @@
 // CIVION Mail — Review.
 //
-// Two queues, both joins of things this module does not own: the record set, the identity
-// snapshot, and the junk admission projection. No messenger call, no queue state, no
-// second copy of anything.
+// Five queues, joins of things this module does not own: the record set, the identity
+// snapshot, the junk admission projection and the review state. No messenger call, no
+// queue state, no second copy of anything.
+//
+// Three queues are derivable from the records alone and two are backed by runtime
+// state the background owns. Uncertain reading is built from the very rows Dates builds,
+// through deriveDates, so the two screens cannot end up describing the same reading
+// differently — the identity is recordId + findingId in both.
 //
 // Junk watch follows the line decision r002 section 3 draws. A message that failed the
 // admission gate received no verdict, so it is not listed here — it exists only as a
@@ -10,6 +15,7 @@
 // which is the one thing the gate refuses to produce.
 
 import { deriveSenderReview, dispositionButtons } from "./views-identity.mjs";
+import { deriveDates } from "./views-dates.mjs";
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,11 +44,163 @@ export function deriveJunkWatch(records, junk) {
   };
 }
 
+/**
+ * The readings the machine could not settle. Built from the Dates rows so that a finding
+ * marked unsettled there is the same finding here, addressed the same way.
+ */
+export function deriveUncertain(records, now, rejectedKeys = new Set()) {
+  return deriveDates(records, now)
+    .filter((row) => row.unsettled && !row.closed && !rejectedKeys.has(row.id))
+    .map((row) => ({
+      key: row.id,
+      recordId: row.recordId,
+      findingId: row.findingId,
+      sender: row.sender,
+      subject: row.subject,
+      roleLabel: row.roleLabel,
+      iso: row.iso,
+      evidence: row.evidence,
+      ambiguous: row.ambiguous
+    }));
+}
+
+/** Messages the analysis could not read at all, or whose original has gone. */
+export function deriveUnreadable(records) {
+  return (Array.isArray(records) ? records : [])
+    .filter((record) => !CLOSED.has(record.status))
+    .filter((record) => record.analysisError || record.messageAvailable === false)
+    .map((record) => ({
+      key: record.id,
+      recordId: record.id,
+      sender: record.sender || "Unknown sender",
+      subject: record.subject || "(no subject)",
+      reason: record.analysisError
+        ? "the analysis failed on this message"
+        : "the original message is no longer available"
+    }));
+}
+
+/** What you told the analysis it got wrong. A record, not a queue of work. */
+export function deriveMarkedIncorrect(records) {
+  return (Array.isArray(records) ? records : [])
+    .filter((record) => record.markedIncorrect === true)
+    .map((record) => ({
+      key: record.id,
+      recordId: record.id,
+      sender: record.sender || "Unknown sender",
+      subject: record.subject || "(no subject)",
+      status: record.status || "New"
+    }));
+}
+
+/** Readings you rejected. The rejection lives in the background; this only reads it. */
+export function deriveRejected(records, review) {
+  const byId = new Map((Array.isArray(records) ? records : []).map((record) => [record.id, record]));
+  return (review?.rejections || []).map((entry) => {
+    const record = byId.get(entry.recordId) || null;
+    return {
+      key: entry.key,
+      recordId: entry.recordId,
+      findingId: entry.findingId,
+      rejectedAt: entry.rejectedAt,
+      sender: record?.sender || "record no longer held",
+      subject: record?.subject || "",
+      present: Boolean(record)
+    };
+  });
+}
+
+/** Analyser identities this mailbox has records from that you have not acknowledged. */
+export function deriveNewRules(review) {
+  return (review?.rules || []).filter((rule) => !rule.acknowledged);
+}
+
+const CLOSED = new Set(["Completed", "Dismissed", "Archived"]);
+
 // ---------------------------------------------------------------- rendering
 
 let lastRecords = [];
 let lastIdentity = null;
 let lastJunk = null;
+let lastReview = null;
+
+function reviewCommand(detail) {
+  document.dispatchEvent(new CustomEvent("civion:review-command", { detail }));
+}
+
+function actionButton(label, detail, primary = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = primary ? "btn small primary" : "btn small";
+  button.textContent = label;
+  button.addEventListener("click", () => reviewCommand(detail));
+  return button;
+}
+
+/** One row: what it is, why it is here, and what you can do about it. */
+function queueRow(title, help, controls) {
+  const row = document.createElement("div");
+  row.className = "setrow";
+  const left = document.createElement("div");
+  const label = document.createElement("div");
+  label.className = "lbl";
+  label.textContent = title;
+  const note = document.createElement("p");
+  note.className = "help";
+  note.textContent = help;
+  left.append(label, note);
+  const ctl = document.createElement("div");
+  ctl.className = "ctl";
+  for (const control of controls) ctl.append(control);
+  row.append(left, ctl);
+  return row;
+}
+
+function fillQueue(listId, countId, emptyId, rows) {
+  const list = $(listId);
+  if (!list) return;
+  list.replaceChildren();
+  $(countId).textContent = String(rows.length);
+  $(emptyId).hidden = rows.length > 0;
+  for (const row of rows) list.append(row);
+}
+
+function renderRecordQueues() {
+  const rejectedKeys = new Set((lastReview?.rejections || []).map((entry) => entry.key));
+
+  fillQueue("reviewUncertainList", "reviewUncertainCount", "reviewUncertainEmpty",
+    deriveUncertain(lastRecords, Date.now(), rejectedKeys).map((item) => queueRow(
+      `${item.sender} — ${item.roleLabel} on ${item.iso}`,
+      `${item.evidence || "no quoted evidence was recorded"}${item.ambiguous ? " The written date is ambiguous and was not resolved by assumption." : ""} Subject: ${item.subject}`,
+      [actionButton("Reject this reading", { type: "reject-finding", recordId: item.recordId, findingId: item.findingId })]
+    )));
+
+  fillQueue("reviewUnreadableList", "reviewUnreadableCount", "reviewUnreadableEmpty",
+    deriveUnreadable(lastRecords).map((item) => queueRow(
+      item.sender, `${item.reason}. Subject: ${item.subject}`, []
+    )));
+
+  fillQueue("reviewIncorrectList", "reviewIncorrectCount", "reviewIncorrectEmpty",
+    deriveMarkedIncorrect(lastRecords).map((item) => queueRow(
+      item.sender, `You marked this analysis incorrect. Status: ${item.status}. Subject: ${item.subject}`, []
+    )));
+}
+
+function renderStateQueues() {
+  fillQueue("reviewRejectedList", "reviewRejectedCount", "reviewRejectedEmpty",
+    deriveRejected(lastRecords, lastReview).map((item) => queueRow(
+      item.sender,
+      `${item.findingId || "reading"} rejected${item.rejectedAt ? ` on ${new Date(item.rejectedAt).toLocaleDateString()}` : ""}. ${item.present ? `Subject: ${item.subject}` : "The record is no longer held; the rejection is kept so it is not silently undone."}`,
+      [actionButton("Restore", { type: "restore-finding", recordId: item.recordId, findingId: item.findingId })]
+    )));
+
+  fillQueue("reviewRulesList", "reviewRulesCount", "reviewRulesEmpty",
+    deriveNewRules(lastReview).map((rule) => queueRow(
+      rule.label || rule.id,
+      `${rule.recordCount} record${rule.recordCount === 1 ? "" : "s"} in this mailbox were analysed by this rule set, first on ${rule.firstSeenAt ? new Date(rule.firstSeenAt).toLocaleDateString() : "an unknown date"}. Acknowledging it does not change any record.`,
+      [actionButton("Acknowledge", { type: "acknowledge-rule", ruleId: rule.id }, true)]
+    )));
+}
 
 function renderSenderQueue() {
   const list = $("reviewSenderList");
@@ -153,6 +311,8 @@ function renderJunkWatch() {
 
 function renderAll() {
   renderSenderQueue();
+  renderRecordQueues();
+  renderStateQueues();
   renderJunkWatch();
 }
 
@@ -170,5 +330,10 @@ if (hasDocument) {
   document.addEventListener("civion:junk-admission-state", (event) => {
     lastJunk = event.detail || null;
     renderJunkWatch();
+  });
+  document.addEventListener("civion:review-state", (event) => {
+    lastReview = event.detail || null;
+    renderRecordQueues();
+    renderStateQueues();
   });
 }

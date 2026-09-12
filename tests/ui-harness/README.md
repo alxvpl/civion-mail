@@ -13,13 +13,14 @@ Three things cannot be proven by reading source:
 - that every derived screen is complete **on arrival**, rather than filling itself when
   some other screen is visited first.
 
-Two scripts cover them. Both need `playwright` and the extension served over http — ES
+Three scripts cover them. All need `playwright` and the extension served over http — ES
 modules do not load from `file://`:
 
 ```
 npx --yes serve -l 8712 .          # or any static server rooted at the extension
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-identity-refresh.mjs
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-snapshot-screens.mjs
+BASE_URL=http://localhost:8712 node tests/ui-harness/check-review-commands.mjs
 ```
 
 `check-identity-refresh.mjs` attacks the freeze at every level in strict mode — outside
@@ -28,13 +29,18 @@ to a deep one — then blocks a domain from Trust and checks that Trust, the sum
 sender queue all move with zero navigations, and that clearing it restores the previous
 state.
 
-`check-snapshot-screens.mjs` opens each screen first in its own page, with nothing else
-visited, and requires it to be complete; then walks all of them in one page and requires
-every figure to be unchanged. That is what "fed by snapshots, no duplicate state" looks
-like from the outside.
+`check-snapshot-screens.mjs` opens each of the eleven surfaces first in its own page, with
+nothing else visited, and requires it to be complete with its counter matching its list;
+then walks all of them in one page in a **shuffled** order and requires every figure to be
+unchanged; then checks that a selected record survives a trip through the other screens.
+That is what "fed by snapshots, no duplicate state" looks like from the outside.
+
+`check-review-commands.mjs` drives the only two commands Review issues — rejecting a
+reading and acknowledging a rule — and checks the loop closes with zero navigations, that
+a rejected reading is kept and names its finding, and that restoring puts it back.
 
 Both exit non-zero on the first failed expectation and leave the fixture as they found it.
 
 `tests/run-tests.mjs` needs no browser and covers everything else, including the pure
-derivations behind Today, Dates, Trust, the sender queue and Junk watch. Dates takes
+derivations behind Today, Dates, Trust and all five Review queues. Dates takes
 `now` as an argument, so those cases are deterministic.

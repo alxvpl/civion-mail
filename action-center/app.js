@@ -1428,6 +1428,48 @@ async function publishIdentityState() {
   }
 }
 
+// Review's two state-backed queues: a reading you rejected, and a rule that has only just
+// started acting. Both are runtime facts rather than message facts, so they arrive the
+// same way — read-only, frozen, owned by the background.
+async function publishReviewState() {
+  try {
+    const response = await send("getReviewState");
+    document.dispatchEvent(new CustomEvent("civion:review-state", {
+      detail: deepFreeze(response.review)
+    }));
+  } catch (error) {
+    showToast(`Review state could not be read: ${error.message}`, true);
+  }
+}
+
+// A view asks; the background decides; the next snapshot is what the view shows.
+document.addEventListener("civion:review-command", (event) => {
+  const detail = event.detail || {};
+  void (async () => {
+    try {
+      if (detail.type === "reject-finding" || detail.type === "restore-finding") {
+        await send("setReviewRejection", {
+          recordId: detail.recordId,
+          findingId: detail.findingId,
+          rejected: detail.type === "reject-finding",
+          reason: detail.reason || ""
+        });
+        showToast(detail.type === "reject-finding"
+          ? "The reading is marked as rejected. It stays visible and is not treated as operational."
+          : "The reading is no longer rejected.");
+      } else if (detail.type === "acknowledge-rule") {
+        await send("acknowledgeRule", { ruleId: detail.ruleId });
+        showToast("Rule acknowledged.");
+      } else {
+        return;
+      }
+      await loadState(false);
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  })();
+});
+
 // Junk admission is its own read-only contract, not part of identity: identity is about
 // domains the person decided on, this is about what the gate did to individual messages.
 async function publishJunkAdmissionState() {
@@ -1552,6 +1594,7 @@ async function loadState(reconfigure = true) {
   // as the records, without a reload.
   void publishIdentityState();
   void publishJunkAdmissionState();
+  void publishReviewState();
 }
 
 function selectedRecord() {

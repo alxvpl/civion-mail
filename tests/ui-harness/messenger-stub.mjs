@@ -210,6 +210,31 @@ function identitySnapshot() {
   };
 }
 
+// Review's runtime state, mutated here exactly as the background would.
+const REJECTIONS = new Map();
+const ACKNOWLEDGED = new Set();
+
+function reviewSnapshot() {
+  return {
+    generatedAt: new Date().toISOString(),
+    rejections: [...REJECTIONS.entries()].map(([key, value]) => ({
+      key,
+      recordId: key.split("::")[0],
+      findingId: key.split("::").slice(1).join("::"),
+      rejectedAt: value.at,
+      reason: value.reason
+    })),
+    rules: [
+      { id: "local-rules-0.8.0", label: "Local rules 0.8.0", recordCount: 5,
+        firstSeenAt: "2026-09-04T13:55:00.000Z", lastSeenAt: "2026-09-11T07:02:00.000Z",
+        acknowledged: ACKNOWLEDGED.has("local-rules-0.8.0"), acknowledgedAt: null },
+      { id: "local-rules-0.7.2", label: "Local rules 0.7.2", recordCount: 1,
+        firstSeenAt: "2026-08-30T10:12:00.000Z", lastSeenAt: "2026-08-30T10:12:00.000Z",
+        acknowledged: true, acknowledgedAt: "2026-08-31T09:00:00.000Z" }
+    ]
+  };
+}
+
 const STATE = {
   ok: true,
   records: RECORDS,
@@ -264,6 +289,17 @@ const ANSWERS = {
   }),
   runSelfCheck: () => ({ ok: true, report: REPORT }),
   getIdentityState: () => ({ ok: true, identity: identitySnapshot() }),
+  getReviewState: () => ({ ok: true, review: reviewSnapshot() }),
+  setReviewRejection: (message) => {
+    const key = `${message.recordId}::${message.findingId}`;
+    if (message.rejected) REJECTIONS.set(key, { at: new Date().toISOString(), reason: message.reason || "" });
+    else REJECTIONS.delete(key);
+    return { ok: true, key, rejected: Boolean(message.rejected) };
+  },
+  acknowledgeRule: (message) => {
+    ACKNOWLEDGED.add(String(message.ruleId));
+    return { ok: true, ruleId: message.ruleId };
+  },
   getJunkAdmissionState: () => ({
     ok: true,
     junk: {
