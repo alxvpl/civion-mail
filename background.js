@@ -20,6 +20,11 @@ import {
 } from "./modules/document-archive.mjs";
 import { runSelfCheck, sanitizeDiagnosticReport } from "./modules/diagnostics.mjs";
 import {
+  OBSERVED_SERVICE_DOMAIN_ALLOWLIST,
+  PROTECTED_IDENTITIES,
+  KNOWN_PHISHING_ONLY_DOMAINS
+} from "./modules/protected-identities.mjs";
+import {
   SCHEMA_VERSION,
   clearClosedRecords,
   findRecord,
@@ -2073,6 +2078,50 @@ function normalizeContextDomain(value) {
   return domain;
 }
 
+// Identity state has one owner, and it is here. The Action Center never keeps a sender
+// database of its own: it asks for this snapshot, derives Trust and the sender queue in
+// Review from it plus the records it already has, and asks the background to change
+// anything. Every value is normalised on this side of the boundary, so a view never has
+// to decide what a domain or an authserv-id looks like.
+//
+// Provenance is part of the contract, not decoration: "user" is something the person did,
+// "built-in" ships with the extension, "observed" is corpus-derived and is explicitly not
+// a trust decision.
+async function getIdentityState() {
+  const settings = await getSettings();
+  const userAllowlisted = new Set(settings.userAllowlistedDomains || []);
+  const userBlocked = new Set(settings.userBlockedDomains || []);
+
+  const allowlistedDomains = [
+    ...[...userAllowlisted].map((domain) => ({ domain, provenance: "user" })),
+    ...OBSERVED_SERVICE_DOMAIN_ALLOWLIST
+      .filter((domain) => !userAllowlisted.has(domain))
+      .map((domain) => ({ domain, provenance: "observed" }))
+  ];
+
+  const blockedDomains = [
+    ...[...userBlocked].map((domain) => ({ domain, provenance: "user" })),
+    ...KNOWN_PHISHING_ONLY_DOMAINS
+      .filter((domain) => !userBlocked.has(domain))
+      .map((domain) => ({ domain, provenance: "built-in" }))
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    trustedAuthservIds: (settings.trustedAuthservIds || []).map((id) => ({ id, provenance: "user" })),
+    allowlistedDomains,
+    blockedDomains,
+    // The matching patterns stay in the background. A view has no business running them,
+    // and a RegExp does not survive the message boundary anyway.
+    protectedIdentities: PROTECTED_IDENTITIES.map((identity) => ({
+      id: identity.id,
+      label: identity.label,
+      domains: [...identity.domains],
+      provenance: "built-in"
+    }))
+  };
+}
+
 async function setDomainDisposition(domainValue, disposition) {
   const domain = normalizeContextDomain(domainValue);
   if (!domain) throw new Error("Invalid sender domain.");
@@ -2215,6 +2264,9 @@ async function handleRuntimeMessage(request) {
     const remaining = await clearClosedRecords();
     await updateActionCenterBadge();
     return { ok: true, remaining };
+  }
+  if (type === "getIdentityState") {
+    return { ok: true, identity: await getIdentityState() };
   }
   if (type === "setDomainDisposition") {
     const result = await setDomainDisposition(request.domain, request.disposition);

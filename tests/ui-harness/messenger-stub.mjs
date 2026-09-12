@@ -127,6 +127,31 @@ const RECORDS = [
   })
 ];
 
+// The two lists the person owns. setDomainDisposition mutates them here exactly as the
+// background would, so the harness can prove Trust updates without a reload.
+const USER_ALLOW = new Set(["nieuwveen.example.invalid"]);
+const USER_BLOCK = new Set();
+const OBSERVED = ["kade-water.example.invalid", "stroomnet-zuid.example.invalid"];
+const PHISHING_ONLY = ["oglix.example.invalid"];
+
+function identitySnapshot() {
+  return {
+    generatedAt: new Date().toISOString(),
+    trustedAuthservIds: [{ id: "mx.example.invalid", provenance: "user" }],
+    allowlistedDomains: [
+      ...[...USER_ALLOW].map((domain) => ({ domain, provenance: "user" })),
+      ...OBSERVED.filter((d) => !USER_ALLOW.has(d)).map((domain) => ({ domain, provenance: "observed" }))
+    ],
+    blockedDomains: [
+      ...[...USER_BLOCK].map((domain) => ({ domain, provenance: "user" })),
+      ...PHISHING_ONLY.filter((d) => !USER_BLOCK.has(d)).map((domain) => ({ domain, provenance: "built-in" }))
+    ],
+    protectedIdentities: [
+      { id: "nieuwveen", label: "Gemeente Nieuwveen", domains: ["nieuwveen.example.invalid"], provenance: "built-in" }
+    ]
+  };
+}
+
 const STATE = {
   ok: true,
   records: RECORDS,
@@ -179,7 +204,16 @@ const ANSWERS = {
     archive: null,
     scope: { accountCount: 1, folderCount: 3, messageCount: 1592 }
   }),
-  runSelfCheck: () => ({ ok: true, report: REPORT })
+  runSelfCheck: () => ({ ok: true, report: REPORT }),
+  getIdentityState: () => ({ ok: true, identity: identitySnapshot() }),
+  setDomainDisposition: (message) => {
+    const domain = String(message?.domain || "").toLowerCase();
+    USER_ALLOW.delete(domain);
+    USER_BLOCK.delete(domain);
+    if (message?.disposition === "allow") USER_ALLOW.add(domain);
+    if (message?.disposition === "block") USER_BLOCK.add(domain);
+    return { ok: true, domain, disposition: message?.disposition };
+  }
 };
 
 const REPORT = {

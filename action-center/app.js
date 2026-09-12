@@ -1405,6 +1405,46 @@ function showAllRetainedRecords() {
   renderRows();
 }
 
+// Identity state is owned by the background. This is the bridge and the only place that
+// asks for it: the snapshot is frozen before it is published, so a screen that tries to
+// keep or edit its own copy of the sender lists fails loudly instead of drifting.
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) deepFreeze(nested);
+  }
+  return value;
+}
+
+async function publishIdentityState() {
+  try {
+    const response = await send("getIdentityState");
+    document.dispatchEvent(new CustomEvent("civion:identity-state", {
+      detail: deepFreeze(response.identity)
+    }));
+  } catch (error) {
+    // A screen keeps the snapshot it already has rather than showing a half-empty one.
+    showToast(`Identity state could not be read: ${error.message}`, true);
+  }
+}
+
+// A view asks for a change; it never performs one. The background decides and the next
+// snapshot is what the view sees, so Trust and Review cannot disagree with the runtime.
+document.addEventListener("civion:identity-command", (event) => {
+  const { domain, disposition } = event.detail || {};
+  void (async () => {
+    try {
+      await send("setDomainDisposition", { domain, disposition });
+      await loadState(false);
+      showToast(disposition === "clear"
+        ? `Cleared the disposition for ${domain}.`
+        : `${domain} is now ${disposition === "allow" ? "allowlisted" : "blocked"}.`);
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  })();
+});
+
 // The derived screens read the record set; they do not own it and never write it back.
 // One event after every render is the whole contract between app.js and them, so a view
 // can be added or removed without app.js knowing anything about it.
@@ -1494,6 +1534,9 @@ async function loadState(reconfigure = true) {
   state.version = response.version || "0.1.15";
   if (reconfigure) configureControls();
   render();
+  // Every refresh republishes identity too, so a change to the allow or block list reaches
+  // Trust and Review on the same tick as the records, without a reload.
+  void publishIdentityState();
 }
 
 function selectedRecord() {

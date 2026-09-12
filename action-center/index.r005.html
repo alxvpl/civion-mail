@@ -7,6 +7,7 @@
 <link href="civion-mail-ui-r005.css" rel="stylesheet"/>
 <script src="ui-shell.mjs" type="module"></script>
 <script src="views-today.mjs" type="module"></script>
+<script src="views-identity.mjs" type="module"></script>
 <script src="app.js" type="module"></script>
 </head>
 <body data-theme="system">
@@ -26,6 +27,15 @@
   <button aria-current="false" class="rail-btn" data-go="system" type="button">
     <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v11H4z"/><path d="M9 20h6M12 16v4"/></svg>
     <span>System</span>
+  </button>
+  <button aria-current="false" class="rail-btn" data-go="review" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>
+    <span>Review</span>
+  </button>
+  <div class="rail-sep"></div>
+  <button aria-current="false" class="rail-btn" data-go="trust" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    <span>Trust</span>
   </button>
   <div class="spacer"></div>
   <button aria-current="false" class="rail-btn" data-go="settings" type="button">
@@ -306,6 +316,54 @@
       </section>
 
     </div>
+  </div>
+</section>
+
+<!-- ============================ REVIEW ============================ -->
+<section class="screen" data-screen="review">
+  <div class="head">
+    <h1>Review</h1>
+    <p>Decisions the machine is not allowed to make for you. Each one changes what the runtime does next.</p>
+    <div aria-label="Review queues" class="tabs" role="tablist">
+      <button aria-controls="reviewSenderPanel" aria-selected="true" class="tab" data-view="senders" id="tab-review-senders" role="tab" type="button">Sender identity</button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="stack" data-view="senders" id="reviewSenderPanel" role="tabpanel" tabindex="0" aria-labelledby="tab-review-senders">
+      <section class="pane">
+        <header class="pane-h"><h2>Sender identity</h2><span class="count warn" id="reviewSenderCount">0</span>
+          <span class="sub">a domain with no decision of yours behind it</span>
+          <span class="right"><button class="btn small" data-go="trust" type="button">Open Trust</button></span></header>
+        <div id="reviewSenderList"></div>
+        <p class="pane-note" hidden="" id="reviewSenderEmpty">No sender is waiting on a decision.</p>
+      </section>
+      <section class="pane"><p class="pane-note">Junk watch is not here yet. It needs the admission and history state the background keeps separately, and a queue that showed nothing while claiming to watch would be worse than an absent one.</p></section>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TRUST ============================ -->
+<section class="screen" data-screen="trust">
+  <div class="head">
+    <h1>Trust</h1>
+    <p>One row per sender domain the analysed mail actually came from, with what you decided about it and where that decision came from.</p>
+  </div>
+  <div class="body">
+    <section class="pane">
+      <header class="pane-h"><h2>Identity state</h2>
+        <span class="right"><button class="btn small" data-go="settings" type="button">Trusted authserv-id</button></span></header>
+      <p class="pane-note" id="trustSummary">Identity state has not been read yet.</p>
+    </section>
+    <section class="pane list-pane">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Domain</th><th>Records</th><th>Authentication</th><th>Disposition</th><th>Last seen</th><th>Change</th></tr></thead>
+          <tbody id="trustRows"></tbody>
+        </table>
+      </div>
+      <p class="pane-note" hidden="" id="trustEmpty">No analysed message has a sender domain yet.</p>
+    </section>
+    <section class="pane"><p class="pane-note">An observed service domain is corpus-derived and is not a decision: it says the domain has been seen sending legitimate-looking mail, nothing more. Only “allowed by you” and “blocked by you” change what the runtime does.</p></section>
   </div>
 </section>
 

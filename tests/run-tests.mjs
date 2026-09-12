@@ -8,6 +8,7 @@ import { describeNarrowing, emptyResultText, narrowingText } from "../modules/vi
 import { evaluateJunkAdmission, collectPriorEvidence, ADMISSION_PATHS, MIN_PRIOR_RECORDS } from "../modules/junk-admission.mjs";
 import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/document-archive.mjs";
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
+import { deriveTrust, deriveSenderReview } from "../action-center/views-identity.mjs";
 import {
   summarise as summariseToday,
   decisionReason as decisionReasonToday,
@@ -1100,6 +1101,7 @@ check("T125 running state is written into the menu item label, not over the whol
 
 const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
 const todaySource = readFileSync(new URL("../action-center/views-today.mjs", import.meta.url), "utf8");
+const identitySource = readFileSync(new URL("../action-center/views-identity.mjs", import.meta.url), "utf8");
 
 // Every chip app.js builds must carry the r005 base class and a tone, or the record rows
 // render as bare text under the r005 stylesheet.
@@ -1156,6 +1158,80 @@ check("T134 the derived view reads a published snapshot and owns no record state
   /document\.dispatchEvent\(new CustomEvent\("civion:state"/u.test(actionCenter)
   && !/messenger\./u.test(todaySource)
   && !/send\(/u.test(todaySource));
+
+// Identity state has one owner. Trust and the sender queue in Review are joins of the
+// record set with the snapshot the background publishes — there is no sender database in
+// the Action Center, and provenance travels with every disposition because "you allowed
+// this" and "the corpus has seen this" are different facts.
+const IDENTITY_FIXTURE = {
+  trustedAuthservIds: [{ id: "mx.example.invalid", provenance: "user" }],
+  allowlistedDomains: [
+    { domain: "allowed.example.invalid", provenance: "user" },
+    { domain: "observed.example.invalid", provenance: "observed" }
+  ],
+  blockedDomains: [
+    { domain: "blocked.example.invalid", provenance: "user" },
+    { domain: "phish.example.invalid", provenance: "built-in" }
+  ],
+  protectedIdentities: [
+    { id: "gemeente", label: "Gemeente", domains: ["allowed.example.invalid"], provenance: "built-in" }
+  ]
+};
+const identityRecord = (domain, over = {}) => ({
+  status: "New", sender: domain, senderAddress: `post@${domain}`, receivedAt: "2026-09-10T08:00:00.000Z", ...over
+});
+const trustRows = deriveTrust([
+  identityRecord("allowed.example.invalid"),
+  identityRecord("observed.example.invalid"),
+  identityRecord("blocked.example.invalid"),
+  identityRecord("unknown.example.invalid")
+], IDENTITY_FIXTURE);
+const byDomain = Object.fromEntries(trustRows.map((row) => [row.domain, row]));
+
+check("T135 a disposition carries its provenance, and observed is not a decision",
+  byDomain["allowed.example.invalid"].dispositionLabel === "allowed by you"
+  && byDomain["observed.example.invalid"].dispositionLabel === "observed service domain"
+  && byDomain["blocked.example.invalid"].dispositionLabel === "blocked by you"
+  && byDomain["unknown.example.invalid"].dispositionLabel === "no disposition",
+  trustRows.map((row) => `${row.domain}=${row.dispositionLabel}`).join(" "));
+
+check("T136 Trust rows come from the records, not from the lists",
+  trustRows.length === 4
+  && !trustRows.some((row) => row.domain === "phish.example.invalid")
+  && byDomain["allowed.example.invalid"].protectedIdentity?.label === "Gemeente",
+  `rows=${trustRows.length}`);
+
+const senderQueue = deriveSenderReview([
+  identityRecord("blocked.example.invalid"),
+  identityRecord("allowed.example.invalid", { admittedFromJunk: true }),
+  identityRecord("phish.example.invalid"),
+  identityRecord("observed.example.invalid", { admittedFromJunk: true }),
+  identityRecord("failed.example.invalid", { senderTrust: { authentication: { verdict: "failed" } } }),
+  identityRecord("closed.example.invalid", { status: "Completed", admittedFromJunk: true })
+], IDENTITY_FIXTURE);
+
+check("T137 the sender queue holds only what you have not decided, and never a closed record",
+  senderQueue.length === 3
+  && senderQueue.some((item) => item.domain === "phish.example.invalid")
+  && senderQueue.some((item) => item.domain === "observed.example.invalid")
+  && senderQueue.some((item) => item.domain === "failed.example.invalid")
+  && !senderQueue.some((item) => ["blocked.example.invalid", "allowed.example.invalid", "closed.example.invalid"].includes(item.domain)),
+  senderQueue.map((item) => item.domain).join(" "));
+
+check("T138 the identity snapshot is read-only in the Action Center and asked for once",
+  /function deepFreeze\(/u.test(actionCenter)
+  && /deepFreeze\(response\.identity\)/u.test(actionCenter)
+  && (actionCenter.match(/send\("getIdentityState"\)/gu) || []).length === 1
+  && !/messenger\./u.test(identitySource)
+  && !/send\(/u.test(identitySource));
+
+check("T139 a view asks for an identity change and never performs one",
+  /document\.addEventListener\("civion:identity-command"/u.test(actionCenter)
+  && /send\("setDomainDisposition"/u.test(actionCenter)
+  && /dispatchEvent\(new CustomEvent\("civion:identity-command"/u.test(identitySource)
+  && /type === "getIdentityState"/u.test(bg)
+  && /provenance: "observed"/u.test(bg)
+  && /provenance: "built-in"/u.test(bg));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");
