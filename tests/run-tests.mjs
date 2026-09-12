@@ -10,6 +10,7 @@ import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/doc
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
 import { deriveTrust, deriveSenderReview } from "../action-center/views-identity.mjs";
 import { deriveJunkWatch } from "../action-center/views-review.mjs";
+import { deriveDates, countDates, DATE_FILTERS } from "../action-center/views-dates.mjs";
 import {
   summarise as summariseToday,
   decisionReason as decisionReasonToday,
@@ -1110,6 +1111,8 @@ const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import
 const todaySource = readFileSync(new URL("../action-center/views-today.mjs", import.meta.url), "utf8");
 const identitySource = readFileSync(new URL("../action-center/views-identity.mjs", import.meta.url), "utf8");
 const reviewSource = readFileSync(new URL("../action-center/views-review.mjs", import.meta.url), "utf8");
+const datesSource = readFileSync(new URL("../action-center/views-dates.mjs", import.meta.url), "utf8");
+const analyzerSource2 = readFileSync(new URL("../modules/analyzer.mjs", import.meta.url), "utf8");
 
 // Every chip app.js builds must carry the r005 base class and a tone, or the record rows
 // render as bare text under the r005 stylesheet.
@@ -1292,6 +1295,125 @@ check("T144 the upstream junk marker is carried as an observation, never as trus
   /upstreamMarker/u.test(bg)
   && /never evidence of trust/u.test(bg)
   && /never evidence of trust/u.test(bg));
+
+// Dates is a projection over the records, with `now` passed in so every case is
+// deterministic. A row is a finding, not a record.
+const DATES_NOW = Date.parse("2026-09-12T09:00:00");
+const finding = (over) => ({ actionRequired: false, needsVerification: false, dateAlternatives: [], ...over });
+const DATE_RECORDS = [
+  // One record, two roles: an obligation and an appointment.
+  {
+    id: "two-roles", status: "New", sender: "Gemeente", subject: "Besluit",
+    typedFindings: [
+      finding({ id: "deadline:2026-09-30", type: "deadline", temporalRole: "due_by", date: "2026-09-30", actionRequired: true, evidence: "voor 30 september" }),
+      finding({ id: "appointment:2026-10-08", type: "appointment", temporalRole: "appointment_date", date: "2026-10-08", evidence: "op 8 oktober" })
+    ]
+  },
+  // An optional cancellation window, even though it is dated and in the future.
+  {
+    id: "optional", status: "New", sender: "Meander", subject: "Verlenging",
+    typedFindings: [finding({ id: "cancellation_window:2026-11-30", type: "cancellation_window", temporalRole: "cancellation_deadline", date: "2026-11-30", evidence: "tot 30 november" })]
+  },
+  // A proven obligation whose date has passed.
+  {
+    id: "overdue", status: "In progress", sender: "Kade", subject: "Herinnering",
+    typedFindings: [finding({ id: "payment:2026-09-05", type: "payment", temporalRole: "payment_due", date: "2026-09-05", actionRequired: true, evidence: "uiterlijk 5 september" })]
+  },
+  // An information date, and next to it a deadline the person still has to confirm.
+  {
+    id: "unsettled", status: "New", sender: "Zorgpolis", subject: "Wijziging",
+    needsVerification: ["deadline"],
+    typedFindings: [
+      finding({ id: "information:2027-01-01", type: "information", temporalRole: "effective_or_informational_date", date: "2027-01-01", evidence: "per 1 januari" }),
+      finding({ id: "deadline:2026-12-31", type: "deadline", temporalRole: "due_by", date: "2026-12-31", actionRequired: true, needsVerification: true, dateAlternatives: ["2026-12-31", "2026-03-12"], evidence: "voor 31-12" })
+    ]
+  },
+  // A closed record. Its date stays visible in All and counts nowhere else.
+  {
+    id: "closed", status: "Completed", sender: "Bibliotheek", subject: "Verlengd",
+    typedFindings: [finding({ id: "renewal:2026-08-28", type: "renewal", temporalRole: "renewal_effective_date", date: "2026-08-28", evidence: "per 28 augustus" })]
+  },
+  // A failed analysis with a date. It must not read as "no action".
+  {
+    id: "failed", status: "New", sender: "Onbekend", subject: "Onleesbaar", analysisError: true,
+    typedFindings: [finding({ id: "deadline:2026-10-01", type: "deadline", temporalRole: "due_by", date: "2026-10-01", actionRequired: true, evidence: "" })]
+  },
+  // An undated finding is not a date at all.
+  {
+    id: "undated", status: "New", sender: "Geen datum", subject: "Zonder datum",
+    typedFindings: [finding({ id: "payment:none", type: "payment", temporalRole: "payment_due", date: null, actionRequired: true })]
+  }
+];
+const dateRows = deriveDates(DATE_RECORDS, DATES_NOW);
+const dateById = Object.fromEntries(dateRows.map((row) => [row.id, row]));
+const dateCounts = countDates(dateRows);
+
+check("T145 one record can produce more than one dated row, each with its own role",
+  dateRows.filter((row) => row.recordId === "two-roles").length === 2
+  && dateById["two-roles::deadline:2026-09-30"].role === "deadline"
+  && dateById["two-roles::appointment:2026-10-08"].role === "appointment",
+  dateRows.filter((row) => row.recordId === "two-roles").map((row) => row.role).join(" "));
+
+check("T146 an undated finding produces no row",
+  !dateRows.some((row) => row.recordId === "undated") && dateRows.length === 8,
+  `rows=${dateRows.length}`);
+
+check("T147 a deadline is not every date: only a proven obligation obliges",
+  dateById["two-roles::deadline:2026-09-30"].obliging === true
+  && dateById["two-roles::appointment:2026-10-08"].obliging === false
+  && dateById["unsettled::information:2027-01-01"].obliging === false
+  && dateById["closed::renewal:2026-08-28"].obliging === false);
+
+check("T148 an optional cancellation window is never an obligation and never overdue",
+  dateById["optional::cancellation_window:2026-11-30"].optional === true
+  && dateById["optional::cancellation_window:2026-11-30"].obliging === false
+  && dateById["optional::cancellation_window:2026-11-30"].overdue === false);
+
+check("T149 overdue comes from a proven operational date and stays visible",
+  dateById["overdue::payment:2026-09-05"].overdue === true
+  && dateById["overdue::payment:2026-09-05"].daysFromToday === -7
+  && dateCounts.overdue === 1
+  && dateRows.some((row) => row.id === "overdue::payment:2026-09-05"));
+
+check("T150 an unsettled date is not promoted to operational, and its neighbour is untouched",
+  dateById["unsettled::deadline:2026-12-31"].unsettled === true
+  && dateById["unsettled::deadline:2026-12-31"].obliging === false
+  && dateById["unsettled::deadline:2026-12-31"].ambiguous === true
+  && dateById["unsettled::information:2027-01-01"].unsettled === false,
+  `deadline=${dateById["unsettled::deadline:2026-12-31"].unsettled} information=${dateById["unsettled::information:2027-01-01"].unsettled}`);
+
+check("T151 a closed record keeps its date in All and counts in no operational view",
+  dateById["closed::renewal:2026-08-28"].closed === true
+  && DATE_FILTERS.all(dateById["closed::renewal:2026-08-28"])
+  && !DATE_FILTERS.obliging(dateById["closed::renewal:2026-08-28"])
+  && !DATE_FILTERS.overdue(dateById["closed::renewal:2026-08-28"]));
+
+check("T152 a failed analysis is marked as a failure, never as no action",
+  dateById["failed::deadline:2026-10-01"].analysisError === true
+  && /chip\.textContent = "analysis failed"/u.test(datesSource)
+  // The phrase appears once, in the header comment that forbids it. It must never be a
+  // value the screen writes.
+  && (datesSource.match(/No Action/giu) || []).length === 1
+  && !/textContent = "No Action"/iu.test(datesSource));
+
+check("T153 the four tabs are four filters over one array, so counts and lists agree",
+  dateCounts.all === dateRows.length
+  && dateCounts.obliging === dateRows.filter(DATE_FILTERS.obliging).length
+  && dateCounts.optional === dateRows.filter(DATE_FILTERS.optional).length
+  && dateCounts.overdue === dateRows.filter(DATE_FILTERS.overdue).length
+  && dateCounts.obliging === 3 && dateCounts.optional === 1 && dateCounts.overdue === 1,
+  JSON.stringify(dateCounts));
+
+check("T154 a row is addressed by record and finding, never by position",
+  dateRows.every((row) => row.id === `${row.recordId}::${row.findingId}`)
+  && /\$\{record\.id\}::\$\{finding\.id/u.test(datesSource)
+  && /id: `\$\{finding\.type\}:\$\{finding\.date \|\| finding\.dateRaw \|\| "none"\}`/u.test(analyzerSource2));
+
+check("T155 Dates takes now as an argument and calls no messenger",
+  /export function deriveDates\(records, now\)/u.test(datesSource)
+  && !/Date\.now\(\)/u.test(datesSource.slice(0, datesSource.indexOf("---------------------------------------------------------------- rendering")))
+  && !/messenger\./u.test(datesSource)
+  && !/send\(/u.test(datesSource));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");

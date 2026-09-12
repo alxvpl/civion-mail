@@ -36,4 +36,5 @@ like from the outside.
 Both exit non-zero on the first failed expectation and leave the fixture as they found it.
 
 `tests/run-tests.mjs` needs no browser and covers everything else, including the pure
-derivations behind Today, Trust, the sender queue and Junk watch.
+derivations behind Today, Dates, Trust, the sender queue and Junk watch. Dates takes
+`now` as an argument, so those cases are deterministic.

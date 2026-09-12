@@ -9,6 +9,7 @@
 <script src="views-today.mjs" type="module"></script>
 <script src="views-identity.mjs" type="module"></script>
 <script src="views-review.mjs" type="module"></script>
+<script src="views-dates.mjs" type="module"></script>
 <script src="app.js" type="module"></script>
 </head>
 <body data-theme="system">
@@ -28,6 +29,10 @@
   <button aria-current="false" class="rail-btn" data-go="system" type="button">
     <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v11H4z"/><path d="M9 20h6M12 16v4"/></svg>
     <span>System</span>
+  </button>
+  <button aria-current="false" class="rail-btn" data-go="dates" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+    <span>Dates</span>
   </button>
   <button aria-current="false" class="rail-btn" data-go="review" type="button">
     <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>
@@ -317,6 +322,32 @@
       </section>
 
     </div>
+  </div>
+</section>
+
+<!-- ============================ DATES ============================ -->
+<section class="screen" data-screen="dates">
+  <div class="head">
+    <h1>Dates</h1>
+    <p>Every date the analysis actually found, with the role it plays. One message can appear more than once, because one message can carry more than one date.</p>
+    <div aria-label="Date views" class="tabs" role="tablist">
+      <button aria-selected="true" class="tab" data-view="all" role="tab" type="button">All dates <span class="count" id="datesCount-all">0</span></button>
+      <button aria-selected="false" class="tab" data-view="obliging" role="tab" tabindex="-1" type="button">Obliging you <span class="count" id="datesCount-obliging">0</span></button>
+      <button aria-selected="false" class="tab" data-view="optional" role="tab" tabindex="-1" type="button">Optional <span class="count" id="datesCount-optional">0</span></button>
+      <button aria-selected="false" class="tab" data-view="overdue" role="tab" tabindex="-1" type="button">Overdue <span class="count warn" id="datesCount-overdue">0</span></button>
+    </div>
+  </div>
+  <div class="body">
+    <section class="pane"><p class="pane-note" id="datesNote"></p></section>
+    <section class="pane list-pane">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Role</th><th>From</th><th>Evidence</th><th>State</th></tr></thead>
+          <tbody id="datesRows"></tbody>
+        </table>
+      </div>
+      <p class="pane-note" hidden="" id="datesEmpty">No date matches this view.</p>
+    </section>
   </div>
 </section>
 

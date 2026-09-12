@@ -57,7 +57,12 @@ async function readScreen(screen, view) {
       panes: document.querySelectorAll("#reviewJunkList .pane").length,
       notes: document.getElementById("reviewJunkNotes")?.textContent
     },
-    records: document.querySelectorAll("#recordsBody tr").length
+    records: document.querySelectorAll("#recordsBody tr").length,
+    dates: {
+      counts: Object.fromEntries(["all", "obliging", "optional", "overdue"]
+        .map((key) => [key, document.getElementById(`datesCount-${key}`)?.textContent])),
+      rows: [...document.querySelectorAll("#datesRows tr")].filter((row) => !row.classList.contains("month-rule")).length
+    }
   }));
   await page.close();
   return snapshot;
@@ -93,7 +98,14 @@ expect("Junk watch reports the not-admitted count and refuses to list them",
 const records = await readScreen("records");
 expect("the Action Center is complete on arrival", records.records === 6, String(records.records));
 
-// Now the same four screens in one page, in order. Every figure must match what the
+const dates = await readScreen("dates");
+expect("Dates is complete on arrival, and its counter matches its list",
+  dates.dates.rows === 8 && dates.dates.counts.all === "8"
+  && dates.dates.counts.obliging === "3" && dates.dates.counts.optional === "1"
+  && dates.dates.counts.overdue === "1",
+  JSON.stringify(dates.dates));
+
+// Now every screen in one page, in order. Every figure must match what the
 // screen showed when it was opened alone: nothing may depend on what was visited before.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on("console", (message) => { if (message.type() === "error") errors.push(`walk: ${message.text()}`); });
@@ -101,7 +113,7 @@ page.on("pageerror", (error) => errors.push(`walk: ${error}`));
 await page.addInitScript({ path: STUB });
 await page.goto(`${BASE_URL}/action-center/index.r005.html`);
 await page.waitForTimeout(600);
-for (const [screen, view] of [["records", null], ["trust", null], ["review", "senders"], ["review", "junk"], ["today", null]]) {
+for (const [screen, view] of [["records", null], ["dates", null], ["trust", null], ["review", "senders"], ["review", "junk"], ["today", null]]) {
   await page.click(`.rail-btn[data-go="${screen}"]`);
   if (view) await page.click(`[role=tab][data-view="${view}"]`);
   await page.waitForTimeout(200);
@@ -111,7 +123,8 @@ const walked = await page.evaluate(() => ({
   trustRows: document.querySelectorAll("#trustRows tr").length,
   senderRows: document.querySelectorAll("#reviewSenderList .setrow").length,
   junkPanes: document.querySelectorAll("#reviewJunkList .pane").length,
-  recordRows: document.querySelectorAll("#recordsBody tr").length
+  recordRows: document.querySelectorAll("#recordsBody tr").length,
+  dateRows: [...document.querySelectorAll("#datesRows tr")].filter((row) => !row.classList.contains("month-rule")).length
 }));
 await page.close();
 
@@ -120,7 +133,8 @@ expect("visiting every screen changes none of them",
   && walked.trustRows === trust.trust.rows
   && walked.senderRows === senders.senders.rows
   && walked.junkPanes === junk.junk.panes
-  && walked.recordRows === records.records,
+  && walked.recordRows === records.records
+  && walked.dateRows === dates.dates.rows,
   JSON.stringify(walked));
 
 expect("no console error on any screen", errors.length === 0, errors.join(" | "));

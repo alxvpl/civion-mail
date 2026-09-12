@@ -60,7 +60,15 @@ const RECORDS = [
     categories: ["Deadline", "Government"],
     deadline: { date: "2026-09-30", raw: "voor 30 september", marker: "voor", overdue: false, evidenceStrength: 0.9 },
     deadlineSource: "machine",
-    receivedAt: "2026-09-11T07:02:00.000Z"
+    receivedAt: "2026-09-11T07:02:00.000Z",
+    typedFindings: [
+      { id: "deadline:2026-09-30", type: "deadline", temporalRole: "due_by", date: "2026-09-30",
+        dateRaw: "voor 30 september", actionRequired: true, needsVerification: false,
+        evidence: "Bevestig het kenteken voor 30 september.", evidenceMarker: "voor", dateAlternatives: [] },
+      { id: "appointment:2026-10-08", type: "appointment", temporalRole: "appointment_date", date: "2026-10-08",
+        dateRaw: "8 oktober", actionRequired: false, needsVerification: false,
+        evidence: "U kunt de vergunning ophalen op 8 oktober.", evidenceMarker: "op", dateAlternatives: [] }
+    ]
   }),
   record({
     sender: "Waterbedrijf Kade",
@@ -73,7 +81,12 @@ const RECORDS = [
     categories: ["Payment", "Utilities"],
     deadline: { date: "2026-09-05", raw: "uiterlijk 5 september", marker: "uiterlijk", overdue: true, evidenceStrength: 0.95 },
     deadlineSource: "machine",
-    receivedAt: "2026-09-09T16:41:00.000Z"
+    receivedAt: "2026-09-09T16:41:00.000Z",
+    typedFindings: [
+      { id: "payment:2026-09-05", type: "payment", temporalRole: "payment_due", date: "2026-09-05",
+        dateRaw: "uiterlijk 5 september", actionRequired: true, needsVerification: false,
+        evidence: "Betaal uiterlijk 5 september het openstaande bedrag.", evidenceMarker: "uiterlijk", dateAlternatives: [] }
+    ]
   }),
   record({
     sender: "Zorgpolis Westland",
@@ -86,7 +99,16 @@ const RECORDS = [
     categories: ["Insurance", "Information"],
     receivedAt: "2026-09-08T11:20:00.000Z",
     needsVerification: ["deadline"],
-    confidence: 0.44
+    confidence: 0.44,
+    typedFindings: [
+      { id: "information:2027-01-01", type: "information", temporalRole: "effective_or_informational_date",
+        date: "2027-01-01", dateRaw: "per 1 januari", actionRequired: false, needsVerification: false,
+        evidence: "De voorwaarden wijzigen per 1 januari.", evidenceMarker: "per", dateAlternatives: [] },
+      { id: "deadline:2026-12-31", type: "deadline", temporalRole: "due_by", date: "2026-12-31",
+        dateRaw: "31-12", actionRequired: true, needsVerification: true,
+        evidence: "Reageer voor 31-12 als u niet akkoord gaat.", evidenceMarker: "voor",
+        dateAlternatives: ["2026-12-31", "2026-03-12"] }
+    ]
   }),
   record({
     sender: "Stroomnet Zuid",
@@ -135,7 +157,15 @@ const RECORDS = [
     categories: ["Contract", "Deadline"],
     deadline: { date: "2026-10-20", manuallySet: true, overdue: false },
     deadlineSource: "you",
-    receivedAt: "2026-09-04T13:55:00.000Z"
+    receivedAt: "2026-09-04T13:55:00.000Z",
+    typedFindings: [
+      { id: "deadline:2026-10-20", type: "deadline", temporalRole: "due_by", date: "2026-10-20",
+        dateRaw: "voor 20 oktober", actionRequired: true, needsVerification: false,
+        evidence: "Retourneer de getekende verlenging voor 20 oktober.", evidenceMarker: "voor", dateAlternatives: [] },
+      { id: "cancellation_window:2026-11-30", type: "cancellation_window", temporalRole: "cancellation_deadline",
+        date: "2026-11-30", dateRaw: "tot 30 november", actionRequired: false, needsVerification: false,
+        evidence: "U kunt tot 30 november opzeggen als u dat wenst.", evidenceMarker: "tot", dateAlternatives: [] }
+    ]
   }),
   record({
     sender: "Bibliotheek Randstreek",
@@ -146,7 +176,12 @@ const RECORDS = [
     priority: "None",
     status: "Completed",
     categories: ["Subscription"],
-    receivedAt: "2026-08-30T10:12:00.000Z"
+    receivedAt: "2026-08-30T10:12:00.000Z",
+    typedFindings: [
+      { id: "renewal:2026-08-28", type: "renewal", temporalRole: "renewal_effective_date", date: "2026-08-28",
+        dateRaw: "28 augustus", actionRequired: false, needsVerification: false,
+        evidence: "Uw lidmaatschap is per 28 augustus verlengd.", evidenceMarker: "per", dateAlternatives: [] }
+    ]
   })
 ];
 
