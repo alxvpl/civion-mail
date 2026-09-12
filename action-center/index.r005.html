@@ -6,6 +6,7 @@
 <title>CIVION Mail — Action Center</title>
 <link href="civion-mail-ui-r005.css" rel="stylesheet"/>
 <script src="ui-shell.mjs" type="module"></script>
+<script src="views-today.mjs" type="module"></script>
 <script src="app.js" type="module"></script>
 </head>
 <body data-theme="system">
@@ -13,7 +14,12 @@
 
 <nav aria-label="Sections" class="rail">
   <div class="wordmark">CIVION</div>
-  <button aria-current="true" class="rail-btn" data-go="records" type="button">
+  <button aria-current="true" class="rail-btn" data-go="today" type="button">
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v15H4z"/><path d="M4 9h16M9 3v4M15 3v4"/></svg>
+    <span>Today</span>
+    <span class="rail-count" hidden="" id="railDecisionCount">0</span>
+  </button>
+  <button aria-current="false" class="rail-btn" data-go="records" type="button">
     <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
     <span>Records</span>
   </button>
@@ -28,8 +34,61 @@
   </button>
 </nav>
 
+<!-- ============================ TODAY ============================ -->
+<section class="screen" data-on="true" data-screen="today">
+  <div class="head">
+    <h1>Today</h1>
+    <p>What arrived, what it obliges you to do, and what is waiting on your decision.</p>
+  </div>
+  <div class="body">
+
+    <div class="headline pane">
+      <div class="funds">
+        <span>Needs your decision</span><strong id="todayDecisionBig">0</strong>
+        <em id="todayDecisionNote">Nothing is waiting on you.</em>
+        <div class="second-count"><span>Other attention</span><b id="todayOtherBig">0</b>
+          <em>not decisions — overdue, flagged, original gone</em></div>
+      </div>
+      <div class="accounts-strip"><div id="todayAccounts"></div></div>
+      <div class="stale">
+        <span id="todayCoverage">No analysis has been recorded yet.</span>
+        <span class="pushright">
+          <button class="btn small" data-go="system" data-tab="historical" type="button">Open Historical Scan</button>
+          <button class="btn small" data-go="system" data-tab="health" type="button">Health</button>
+        </span>
+      </div>
+    </div>
+
+    <div class="two-up">
+      <div class="pane">
+        <header class="pane-h"><h2>What is due</h2>
+          <span class="right"><button class="btn small" data-go="records" type="button">Open Action Center</button></span></header>
+        <div class="mini-body" id="todayDue"></div>
+      </div>
+      <div class="pane">
+        <header class="pane-h"><h2>Needs your decision</h2><span class="count warn" id="todayDecisionCount">0</span></header>
+        <ul class="waiting" id="todayDecisionList"></ul>
+        <header class="pane-h" style="border-top:var(--hair) solid var(--line);border-bottom:0">
+          <h2>Other attention</h2><span class="count" id="todayOtherCount">0</span></header>
+        <ul class="waiting" id="todayOtherList"></ul>
+      </div>
+    </div>
+
+    <div class="pane">
+      <header class="pane-h"><h2>Latest findings</h2><span class="sub">all accounts</span>
+        <span class="right"><button class="btn small" data-go="records" type="button">Open Action Center</button></span></header>
+      <table>
+        <thead><tr><th>Date</th><th>Sender</th><th>Finding</th><th>Priority</th></tr></thead>
+        <tbody id="todayRows"></tbody>
+      </table>
+      <p class="pane-note" hidden="" id="todayEmpty">No message has been analysed yet.</p>
+    </div>
+
+  </div>
+</section>
+
 <!-- ============================ RECORDS ============================ -->
-<section class="screen" data-on="true" data-screen="records">
+<section class="screen" data-screen="records">
   <div class="head">
     <h1>Action Center</h1>
     <p>Every message CIVION Mail has analysed on this device. Nothing here leaves the machine, and no original message is changed unless you ask for it.</p>

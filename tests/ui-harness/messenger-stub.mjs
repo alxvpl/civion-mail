@@ -58,7 +58,7 @@ const RECORDS = [
     priority: "High",
     status: "New",
     categories: ["Deadline", "Government"],
-    deadline: "2026-09-30",
+    deadline: { date: "2026-09-30", raw: "voor 30 september", marker: "voor", overdue: false, evidenceStrength: 0.9 },
     deadlineSource: "machine",
     receivedAt: "2026-09-11T07:02:00.000Z"
   }),
@@ -71,7 +71,7 @@ const RECORDS = [
     priority: "Critical",
     status: "In progress",
     categories: ["Payment", "Utilities"],
-    deadline: "2026-09-05",
+    deadline: { date: "2026-09-05", raw: "uiterlijk 5 september", marker: "uiterlijk", overdue: true, evidenceStrength: 0.95 },
     deadlineSource: "machine",
     receivedAt: "2026-09-09T16:41:00.000Z"
   }),
@@ -84,7 +84,9 @@ const RECORDS = [
     priority: "Low",
     status: "New",
     categories: ["Insurance", "Information"],
-    receivedAt: "2026-09-08T11:20:00.000Z"
+    receivedAt: "2026-09-08T11:20:00.000Z",
+    needsVerification: ["deadline"],
+    confidence: 0.44
   }),
   record({
     sender: "Stroomnet Zuid",
@@ -96,7 +98,8 @@ const RECORDS = [
     status: "Waiting",
     categories: ["Utilities", "Payment"],
     receivedAt: "2026-09-06T09:05:00.000Z",
-    admittedFromJunk: true
+    admittedFromJunk: true,
+    markedIncorrect: true
   }),
   record({
     sender: "Huurdersbureau Meander",
@@ -107,7 +110,7 @@ const RECORDS = [
     priority: "High",
     status: "New",
     categories: ["Contract", "Deadline"],
-    deadline: "2026-10-20",
+    deadline: { date: "2026-10-20", manuallySet: true, overdue: false },
     deadlineSource: "you",
     receivedAt: "2026-09-04T13:55:00.000Z"
   }),

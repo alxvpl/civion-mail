@@ -9,6 +9,11 @@ import { evaluateJunkAdmission, collectPriorEvidence, ADMISSION_PATHS, MIN_PRIOR
 import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/document-archive.mjs";
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
 import {
+  summarise as summariseToday,
+  decisionReason as decisionReasonToday,
+  attentionReason as attentionReasonToday
+} from "../action-center/views-today.mjs";
+import {
   MAIL_RUNTIME_CONTRACT_VERSION,
   MailRuntimeDisconnectedError,
   MailRuntimeProtocolError,
@@ -1094,6 +1099,7 @@ check("T125 running state is written into the menu item label, not over the whol
   && (actionCenter.match(/menuItemLabel\(elements\.\w+\)\.textContent/gu) || []).length === 4);
 
 const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
+const todaySource = readFileSync(new URL("../action-center/views-today.mjs", import.meta.url), "utf8");
 
 // Every chip app.js builds must carry the r005 base class and a tone, or the record rows
 // render as bare text under the r005 stylesheet.
@@ -1124,6 +1130,32 @@ check("T130 the sweep states its bound before the run starts, and claims no unli
   /at most \$\{Math\.trunc\(maxMessages\)\} messages examined, between/u.test(actionCenter)
   && !/No date or message limit/u.test(actionCenter)
   && !/no date limit and no count limit/iu.test(markupR005));
+
+// Today is derived from the record set. The audit that produced r003 turned on exactly
+// this: a queue and a record must not be added together, and a summary figure must come
+// from the same data as the list under it. Both are testable without a DOM.
+const overdueRecord = { status: "New", deadline: { date: "2026-09-01", overdue: true } };
+const bothRecord = { status: "New", needsVerification: ["deadline"], deadline: { date: "2026-09-01", overdue: true } };
+const flagged = { status: "New", markedIncorrect: true };
+const closed = { status: "Completed", markedIncorrect: true, deadline: { date: "2026-09-01", overdue: true } };
+const summary = summariseToday([overdueRecord, bothRecord, flagged, closed], Date.parse("2026-09-12T00:00:00"));
+
+check("T131 a record that needs a decision is not also counted as other attention",
+  summary.decisions.length === 1 && summary.attention.length === 2,
+  `decisions=${summary.decisions.length} attention=${summary.attention.length}`);
+
+check("T132 a closed record is neither a decision nor an attention item",
+  decisionReasonToday(closed) === null && attentionReasonToday(closed, Date.parse("2026-09-12T00:00:00")) === null);
+
+check("T133 the Today figures are the lengths of the lists they head",
+  /\$\("todayDecisionBig"\)\.textContent = String\(decisions\.length\)/u.test(todaySource)
+  && /\$\("todayOtherBig"\)\.textContent = String\(attention\.length\)/u.test(todaySource)
+  && /fillQueue\(\$\("todayDecisionList"\), groupCount\(decisions\)/u.test(todaySource));
+
+check("T134 the derived view reads a published snapshot and owns no record state",
+  /document\.dispatchEvent\(new CustomEvent\("civion:state"/u.test(actionCenter)
+  && !/messenger\./u.test(todaySource)
+  && !/send\(/u.test(todaySource));
 
 check("T128 the manifest opens the r005 shell",
   manifest.options_ui.page === "action-center/index.r005.html");

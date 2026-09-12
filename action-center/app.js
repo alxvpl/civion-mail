@@ -1405,9 +1405,25 @@ function showAllRetainedRecords() {
   renderRows();
 }
 
+// The derived screens read the record set; they do not own it and never write it back.
+// One event after every render is the whole contract between app.js and them, so a view
+// can be added or removed without app.js knowing anything about it.
+function publishState() {
+  document.dispatchEvent(new CustomEvent("civion:state", {
+    detail: {
+      records: state.records,
+      accountLabels: state.accountLabels,
+      metadata: state.metadata,
+      settings: state.settings,
+      version: state.version
+    }
+  }));
+}
+
 function render() {
   renderStats();
   renderRows();
+  publishState();
   elements.versionLabel.textContent = `v${state.version}`;
   const runtimeActive = state.listenerState.newMail === true;
   elements.runtimePill.textContent = runtimeActive ? "ACTIVE" : "ERROR";

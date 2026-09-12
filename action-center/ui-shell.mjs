@@ -58,9 +58,15 @@ function closeContextMenu() {
   if (menu && !menu.hidden) menu.hidden = true;
 }
 
-for (const button of $$(".rail-btn")) {
-  button.addEventListener("click", () => go(button.dataset.go));
-}
+// Any element with data-go navigates: the rail, and the shortcuts inside a screen that
+// point at another one. data-tab picks the view within the target screen.
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest("[data-go]");
+  if (trigger) go(trigger.dataset.go, trigger.dataset.tab);
+});
+
+// Screens that are not the shell ask for navigation by event rather than by importing it.
+document.addEventListener("civion:go", (event) => go(event.detail?.screen, event.detail?.view));
 
 // ---------------------------------------------------------------- tabs
 
