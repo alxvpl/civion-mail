@@ -37,6 +37,20 @@ export function go(name, view) {
   const body = $(".body", target);
   if (body) body.scrollTop = 0;
   closeContextMenu();
+  announceVisible();
+}
+
+// A panel reached by navigation has to load the same data as one opened from the
+// Operations menu, so every transition from hidden to visible fires one "show" event.
+const SURFACES = [];
+const wasOpen = new WeakMap();
+
+function announceVisible() {
+  for (const surface of SURFACES) {
+    const open = surface.isOpen(surface.element);
+    if (open && !wasOpen.get(surface.element)) surface.element.dispatchEvent(new Event("show"));
+    wasOpen.set(surface.element, open);
+  }
 }
 
 function closeContextMenu() {
@@ -67,6 +81,7 @@ function selectTab(screen, view) {
   for (const panel of $$('[role="tabpanel"][data-view]', screen)) {
     panel.hidden = panel.dataset.view !== chosen.dataset.view;
   }
+  announceVisible();
 }
 
 function activeView(screen) {
@@ -128,13 +143,20 @@ setTheme(THEMES.has(storedTheme) ? storedTheme : "system");
 function asSurface(id, { show, hide, isOpen }) {
   const element = document.getElementById(id);
   if (!element) return;
-  element.showModal = () => show(element);
-  element.show = () => show(element);
+  const reveal = () => {
+    show(element);
+    announceVisible();
+  };
+  element.showModal = reveal;
+  element.show = reveal;
   element.close = () => {
     hide(element);
+    wasOpen.set(element, false);
     element.dispatchEvent(new Event("close"));
   };
   Object.defineProperty(element, "open", { get: () => isOpen(element), configurable: true });
+  SURFACES.push({ element, isOpen });
+  wasOpen.set(element, isOpen(element));
 }
 
 // The detail is the second pane of the split, not a modal. Opening it hides the

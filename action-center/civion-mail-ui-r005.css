@@ -510,3 +510,64 @@ details.tech[open]>summary::before{content:"▾ "}
 .popup-mock .st{margin:1px 0 0;font-size:var(--t-12);color:var(--st-confirmed-fg)}
 .popup-mock .btn{width:100%;margin-bottom:6px;justify-content:center;text-align:center}
 .popup-mock .hint{margin:7px 0 0;font-size:var(--t-12);color:var(--ink-3)}
+
+/* ============================================================
+   BRIDGE — not part of the extracted r005 baseline.
+
+   app.js builds the rows, chips, context menu, folder tree and checks with the class
+   names of 0.8.1. Those elements now carry the r005 class as well, so most of them are
+   styled by the rules above. What is left here is the handful with no r005 counterpart
+   at all, plus the horizontal scroll the eight-column table needs beside a fixed detail
+   pane. None of these selectors matches anything in the prototype, so the baseline still
+   renders pixel for pixel.
+
+   This block shrinks as app.js is ported and disappears when it is done.
+   ============================================================ */
+
+.table-scroll{overflow-x:auto;max-width:100%}
+
+/* the subject is a button because it opens the original message, not because it is one */
+.subject-button{font:inherit;color:var(--ink);background:none;border:0;padding:0;margin:0;
+  text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:var(--line-strong)}
+.subject-button:hover{text-decoration-color:var(--accent)}
+.subject-button:focus-visible{outline:2px solid var(--accent-focus);outline-offset:2px;border-radius:var(--r-sm)}
+
+.status-select{font:inherit;font-size:var(--t-12);color:var(--ink);background:var(--pane-bg);
+  border:var(--hair) solid var(--line-strong);border-radius:var(--r-sm);padding:2px 4px;max-width:100%}
+
+/* the folder tree of Historical Scan */
+.historical-account{padding:8px 12px;border-top:var(--hair) solid var(--line)}
+.historical-account:first-child{border-top:0}
+.historical-folder-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:2px 14px;
+  padding-left:16px}
+
+/* one diagnostics check: badge, then label and detail */
+.diagnostics-check{display:grid;grid-template-columns:74px 1fr;gap:10px;padding:9px 14px;
+  border-top:var(--hair) solid var(--line)}
+.diagnostics-check:first-child{border-top:0}
+.diagnostics-check strong{font-size:var(--t-13);font-weight:600}
+.diagnostics-check p{margin:2px 0 0;color:var(--ink-2);font-size:var(--t-12)}
+.authserv-line{display:flex;gap:10px;align-items:baseline;padding:7px 14px;
+  border-top:var(--hair) solid var(--line)}
+.authserv-line:first-child{border-top:0}
+.authserv-line code{font-family:var(--mono);font-size:var(--t-12)}
+
+/* the record context menu keeps its 0.8.1 structure */
+.context-menu-item{display:block;width:100%;text-align:left;font:inherit;font-size:var(--t-13);
+  color:var(--ink);background:none;border:0;padding:6px 10px;border-radius:var(--r-sm);cursor:pointer}
+.context-menu-item:hover:not(:disabled){background:var(--row-hover)}
+.context-menu-item:disabled{color:var(--ink-3);cursor:default}
+.context-menu-divider{height:var(--hair);background:var(--line);margin:4px 6px}
+.context-submenu{position:relative}
+.context-submenu-panel{display:none;position:absolute;left:100%;top:-5px;min-width:214px;padding:5px;
+  background:var(--pane-bg);border:var(--hair) solid var(--line-strong);border-radius:var(--r-md);
+  box-shadow:0 14px 34px #00000040}
+.context-submenu:hover>.context-submenu-panel,
+.context-submenu:focus-within>.context-submenu-panel{display:block}
+
+body.column-resizing{cursor:col-resize;-webkit-user-select:none;user-select:none}
+
+/* A grid column is min-content wide by default, so the eight-column table pushed the
+   whole page sideways instead of scrolling inside its own pane. */
+.split>.list-pane{min-width:0}

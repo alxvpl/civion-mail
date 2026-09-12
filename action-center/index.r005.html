@@ -114,7 +114,8 @@
 
     <div class="split">
 
-      <section aria-label="Analysed messages" class="pane">
+      <section aria-label="Analysed messages" class="pane list-pane">
+        <div class="table-scroll">
         <table id="recordsTable">
           <thead>
             <tr>
@@ -130,6 +131,7 @@
           </thead>
           <tbody id="recordsBody"></tbody>
         </table>
+        </div>
         <div class="nothing" hidden="" id="emptyState">
           <h2>CIVION Mail is ready.</h2>
           <p>The extension analyses new incoming messages and shows them here. For manual analysis, select a message in Thunderbird and use the CIVION Mail button or the “Analyse this message” context-menu command.</p>
@@ -500,8 +502,8 @@
   <span class="pill runtime" data-status="checking" id="runtimePill" title="Background process status">CHECKING</span>
   <span class="pill mode" id="modePill" title="Analyses without changing tags by default">PREVIEW</span>
   <span id="recordCount">0 records</span>
+  <span id="versionLabel">—</span>
   <span class="right">
-    <span id="versionLabel">—</span>
     <span aria-label="Appearance" class="tabs" role="tablist" style="border:0;margin:0">
       <button aria-selected="false" class="tab" data-theme-set="light" role="tab" tabindex="-1" type="button">Light</button>
       <button aria-selected="false" class="tab" data-theme-set="dark" role="tab" tabindex="-1" type="button">Dark</button>

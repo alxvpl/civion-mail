@@ -68,7 +68,7 @@
     "default_popup": "popup/index.html"
   },
   "options_ui": {
-    "page": "action-center/index.html",
+    "page": "action-center/index.r005.html",
     "open_in_tab": true
   }
 }

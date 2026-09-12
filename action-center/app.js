@@ -273,14 +273,14 @@ function contextMenuButton(label, action, options = {}) {
 
 function contextSubmenu(label, entries) {
   const wrapper = document.createElement("div");
-  wrapper.className = "context-submenu";
+  wrapper.className = "context-submenu sub";
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "context-menu-item context-submenu-trigger";
   trigger.textContent = label;
   trigger.setAttribute("aria-haspopup", "menu");
   const panel = document.createElement("div");
-  panel.className = "context-submenu-panel";
+  panel.className = "context-submenu-panel subpanel";
   panel.setAttribute("role", "menu");
   for (const entry of entries) panel.append(contextMenuButton(entry.label, entry.action, entry));
   wrapper.append(trigger, panel);
@@ -289,7 +289,7 @@ function contextSubmenu(label, entries) {
 
 function contextDivider() {
   const divider = document.createElement("div");
-  divider.className = "context-menu-divider";
+  divider.className = "context-menu-divider sep";
   divider.setAttribute("role", "separator");
   return divider;
 }
@@ -971,9 +971,26 @@ function renderStats() {
   elements.statNew.textContent = String(active.filter(QUICK_FILTERS.new.match).length);
 }
 
+// Every chip carries the r005 base class as well as the 0.8.1 one it was built with, so
+// the same call renders correctly under either stylesheet while the port is in progress.
+const CHIP_TONE = {
+  "blocked-category-chip": "alert",
+  "warning-error": "alert",
+  "warning-warn": "suggested",
+  "priority-critical": "alert",
+  "priority-high": "alert",
+  "priority-medium": "suggested",
+  "priority-low": "neutral",
+  "priority-none": "neutral"
+};
+
 function createChip(label, className) {
   const chip = document.createElement("span");
-  chip.className = className;
+  const parts = String(className || "").split(/\s+/u).filter(Boolean);
+  const tone = parts.map((part) => CHIP_TONE[part]).find(Boolean) || "neutral";
+  if (!parts.includes("chip")) parts.push("chip");
+  parts.push(tone);
+  chip.className = parts.join(" ");
   chip.textContent = label;
   return chip;
 }
@@ -990,7 +1007,7 @@ function renderRows() {
     if (record.risk?.hardBlock === true) row.dataset.blocked = "true";
 
     const deadlineCell = document.createElement("td");
-    deadlineCell.className = "deadline-cell";
+    deadlineCell.className = "deadline-cell num";
     const appendDeadline = (main, note) => {
       const dateLine = document.createElement("span");
       dateLine.className = "deadline-date";
@@ -998,7 +1015,7 @@ function renderRows() {
       deadlineCell.append(dateLine);
       if (note) {
         const noteLine = document.createElement("small");
-        noteLine.className = "deadline-note";
+        noteLine.className = "deadline-note sub-line";
         noteLine.textContent = note;
         deadlineCell.append(noteLine);
       }
@@ -1021,7 +1038,7 @@ function renderRows() {
     }
 
     const receivedCell = document.createElement("td");
-    receivedCell.className = "received-cell";
+    receivedCell.className = "received-cell num";
     const receivedDate = new Date(record.receivedAt || 0);
     if (Number.isNaN(receivedDate.getTime())) {
       receivedCell.textContent = "—";
@@ -1031,7 +1048,7 @@ function renderRows() {
       dateLine.className = "received-date";
       dateLine.textContent = new Intl.DateTimeFormat("bg-BG", { day: "2-digit", month: "2-digit", year: "numeric" }).format(receivedDate);
       const timeLine = document.createElement("small");
-      timeLine.className = "received-time";
+      timeLine.className = "received-time sub-line";
       timeLine.textContent = new Intl.DateTimeFormat("bg-BG", { hour: "2-digit", minute: "2-digit" }).format(receivedDate);
       receivedCell.append(dateLine, timeLine);
     }
@@ -1046,26 +1063,26 @@ function renderRows() {
     const senderDisplayName = (bracketMatch ? bracketMatch[1] : senderValue).replace(/^["']+|["']+$/gu, "").trim();
     const senderAddress = bracketMatch ? bracketMatch[2].trim() : "";
     const senderName = document.createElement("span");
-    senderName.className = "sender-name";
+    senderName.className = "sender-name wrap-name";
     senderName.textContent = senderDisplayName || senderAddress || "Unknown sender";
     senderName.title = senderValue;
     senderCell.append(senderName);
     if (senderAddress && senderAddress !== senderName.textContent) {
       const addressLine = document.createElement("small");
-      addressLine.className = "sender-address";
+      addressLine.className = "sender-address sub-line";
       addressLine.textContent = senderAddress;
       addressLine.title = senderAddress;
       senderCell.append(addressLine);
     }
     const senderSource = document.createElement("small");
-    senderSource.className = "source-meta";
+    senderSource.className = "source-meta sub-line";
     senderSource.textContent = sourceText(record);
     senderCell.append(senderSource);
 
     const subjectCell = document.createElement("td");
     const subjectButton = document.createElement("button");
     subjectButton.type = "button";
-    subjectButton.className = "subject-button";
+    subjectButton.className = "subject-button wrap-name";
     subjectButton.textContent = record.subject || "(No subject)";
     subjectButton.title = "Open detailed analysis";
     subjectButton.addEventListener("click", (event) => {
@@ -1076,7 +1093,7 @@ function renderRows() {
     const warnings = recordWarnings(record);
     if (warnings.length) {
       const flags = document.createElement("div");
-      flags.className = "row-flags";
+      flags.className = "row-flags hchips";
       for (const warning of warnings) {
         flags.append(createChip(warning.label, `warning-chip warning-${warning.kind}`));
       }
@@ -1086,12 +1103,13 @@ function renderRows() {
     const actionCell = document.createElement("td");
     actionCell.className = "action-cell";
     const actionText = document.createElement("span");
-    actionText.className = "action-text";
+    actionText.className = "action-text wrap-name";
     actionText.textContent = record.requiredAction || record.summary || "—";
     actionText.title = record.requiredAction || record.summary || "";
     actionCell.append(actionText);
 
     const categoriesCell = document.createElement("td");
+    categoriesCell.className = "cats";
     if (record.risk?.hardBlock === true) categoriesCell.append(createChip("Blocked", "category-chip blocked-category-chip"));
     for (const categoryName of record.categories || ["Unknown"]) {
       categoriesCell.append(createChip(displayCategory(categoryName), "category-chip"));
@@ -1125,7 +1143,7 @@ function renderRows() {
     statusCell.append(statusSelect);
 
     row.tabIndex = 0;
-    row.className = "record-row";
+    row.className = "record-row pick";
     row.setAttribute("aria-label", `Open detailed analysis for ${record.subject || "message"}`);
     row.addEventListener("click", (event) => {
       if (event.target.closest("button, select, input, a")) return;
@@ -1239,7 +1257,7 @@ function renderFilterChips() {
   clearNode(elements.filterChips);
   for (const chip of chips) {
     const node = document.createElement("span");
-    node.className = "filter-chip";
+    node.className = "filter-chip fchip";
     const key = document.createElement("span");
     key.className = "chip-key";
     key.textContent = chip.key;
@@ -1471,7 +1489,7 @@ function fillList(list, values, emptyText = "None") {
   if (!normalized.length) {
     const item = document.createElement("li");
     item.textContent = emptyText;
-    item.className = "muted";
+    item.className = "muted dim";
     list.append(item);
     return;
   }
@@ -1700,7 +1718,7 @@ function renderHistoricalScope(accounts) {
   clearNode(elements.historicalScope);
   if (!accounts.length) {
     const empty = document.createElement("p");
-    empty.className = "muted";
+    empty.className = "muted dim";
     empty.textContent = "No Thunderbird accounts or folders were found.";
     elements.historicalScope.append(empty);
     return;
@@ -1709,7 +1727,7 @@ function renderHistoricalScope(accounts) {
     const section = document.createElement("section");
     section.className = "historical-account";
     const heading = document.createElement("div");
-    heading.className = "historical-account-heading";
+    heading.className = "historical-account-heading acct";
     const label = document.createElement("label");
     label.className = "check-line";
     const accountToggle = document.createElement("input");
@@ -1719,7 +1737,7 @@ function renderHistoricalScope(accounts) {
     name.textContent = `${account.name} · ${account.type}`;
     label.append(accountToggle, name);
     const count = document.createElement("span");
-    count.className = "muted";
+    count.className = "muted dim";
     count.textContent = `${account.folders.length} folders`;
     heading.append(label, count);
 
@@ -1738,7 +1756,7 @@ function renderHistoricalScope(accounts) {
       text.textContent = folder.path || folder.name;
       if (Array.isArray(folder.specialUse) && folder.specialUse.length) {
         const special = document.createElement("small");
-        special.className = "historical-special-use";
+        special.className = "historical-special-use tag";
         special.textContent = ` · ${folder.specialUse.join(", ")}`;
         text.append(special);
       }
@@ -1828,20 +1846,32 @@ function startHistoricalPolling() {
   }, 900);
 }
 
-async function openHistoricalScan() {
+// Loading is separate from opening, because the panel can now be reached two ways: the
+// Operations menu, and navigating straight to System → Historical Scan. The shell fires a
+// show event on arrival; the guard keeps the two routes from fetching the scope twice.
+let historicalPanelLoading = false;
+
+async function loadHistoricalScanPanel() {
+  if (historicalPanelLoading) return;
+  historicalPanelLoading = true;
   elements.historicalScanButton.disabled = true;
   try {
     const response = await send("getHistoricalScanScope");
     state.historicalScope = Array.isArray(response.accounts) ? response.accounts : [];
     renderHistoricalScope(state.historicalScope);
     renderHistoricalScanState(response.scan);
-    elements.historicalScanDialog.showModal();
     if (response.scan?.status === "running") startHistoricalPolling();
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    historicalPanelLoading = false;
     elements.historicalScanButton.disabled = false;
   }
+}
+
+async function openHistoricalScan() {
+  elements.historicalScanDialog.showModal();
+  await loadHistoricalScanPanel();
 }
 
 // Mirrors the resolution the background does, so the confirmation names the same window
@@ -1985,7 +2015,11 @@ function startArchiveExistingPolling() {
   }, 900);
 }
 
-async function openArchiveExisting() {
+let archivePanelLoading = false;
+
+async function loadArchiveExistingPanel() {
+  if (archivePanelLoading) return;
+  archivePanelLoading = true;
   elements.archiveExistingButton.disabled = true;
   try {
     const response = await send("getArchiveExistingScope");
@@ -1995,13 +2029,18 @@ async function openArchiveExisting() {
       `${response.scope?.folderCount ?? 0} normal folders across ${response.scope?.accountCount ?? 0} mail accounts. No date or message limit.`
     );
     renderArchiveExistingState(response.archive);
-    elements.archiveExistingDialog.showModal();
     if (response.archive?.status === "running") startArchiveExistingPolling();
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    archivePanelLoading = false;
     elements.archiveExistingButton.disabled = state.historicalScan?.status === "running";
   }
+}
+
+async function openArchiveExisting() {
+  elements.archiveExistingDialog.showModal();
+  await loadArchiveExistingPanel();
 }
 
 async function startArchiveExisting() {
@@ -2166,7 +2205,7 @@ function renderDiagnostics(report) {
   const authservCandidates = Array.isArray(current.authservCandidates) ? current.authservCandidates : [];
   if (!authservCandidates.length) {
     const emptyAuthserv = document.createElement("p");
-    emptyAuthserv.className = "muted";
+    emptyAuthserv.className = "muted dim";
     emptyAuthserv.textContent = "No identifiers have been observed yet — they are collected while analyzing new messages.";
     elements.diagnosticsAuthserv.append(emptyAuthserv);
   } else {
@@ -2176,7 +2215,7 @@ function renderDiagnostics(report) {
       const idSpan = document.createElement("code");
       idSpan.textContent = candidate.id;
       const countSpan = document.createElement("span");
-      countSpan.className = "muted";
+      countSpan.className = "muted dim";
       countSpan.textContent = `${candidate.count} messages`;
       line.append(idSpan, countSpan);
       elements.diagnosticsAuthserv.append(line);
@@ -2187,15 +2226,15 @@ function renderDiagnostics(report) {
   const checks = Array.isArray(current.checks) ? current.checks : [];
   if (!checks.length) {
     const empty = document.createElement("p");
-    empty.className = "muted";
+    empty.className = "muted dim";
     empty.textContent = "No checks are available.";
     elements.diagnosticsChecks.append(empty);
   } else {
     for (const item of checks) {
       const row = document.createElement("div");
-      row.className = `diagnostics-check diagnostics-check-${item.status || "unknown"}`;
+      row.className = `diagnostics-check diagnostics-check-${item.status || "unknown"} ${{ pass: "pass", warn: "warn", fail: "fail" }[item.status] || "skip"}`;
       const badge = document.createElement("span");
-      badge.className = "diagnostics-check-badge";
+      badge.className = "diagnostics-check-badge mk";
       badge.textContent = diagnosticStatusLabel(item.status);
       const body = document.createElement("div");
       const title = document.createElement("strong");
@@ -2214,7 +2253,7 @@ function renderDiagnostics(report) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 7;
-    cell.className = "muted";
+    cell.className = "muted dim";
     cell.textContent = "No accounts were found or the check was not run.";
     row.append(cell);
     elements.diagnosticsAccountsBody.append(row);
@@ -2252,7 +2291,11 @@ function renderDiagnostics(report) {
   setText(elements.diagMigrationStatus, storage.migration?.status || recovery.status || "clean");
 }
 
+let diagnosticsRunning = false;
+
 async function runDiagnostics() {
+  if (diagnosticsRunning) return;
+  diagnosticsRunning = true;
   elements.runSelfCheckButton.disabled = true;
   try {
     const response = await send("runSelfCheck");
@@ -2261,6 +2304,7 @@ async function runDiagnostics() {
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    diagnosticsRunning = false;
     elements.runSelfCheckButton.disabled = false;
   }
 }
@@ -2445,6 +2489,11 @@ function bindEvents() {
   elements.historicalScanDialog.addEventListener("close", () => {
     if (state.historicalScan?.status !== "running") stopHistoricalPolling();
   });
+  // Reaching a panel by navigation rather than through the Operations menu has to load
+  // the same data. The shell fires "show" when a former dialog becomes visible.
+  elements.historicalScanDialog.addEventListener("show", () => { void loadHistoricalScanPanel(); });
+  elements.archiveExistingDialog.addEventListener("show", () => { void loadArchiveExistingPanel(); });
+  elements.diagnosticsDialog.addEventListener("show", () => { void runDiagnostics(); });
 
   elements.archiveExistingButton.addEventListener("click", () => { void openArchiveExisting(); });
   elements.archiveExistingStartButton.addEventListener("click", () => { void startArchiveExisting(); });

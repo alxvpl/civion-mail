@@ -1090,10 +1090,30 @@ check("T125 running state is written into the menu item label, not over the whol
   && !/elements\.(historicalScanButton|archiveExistingButton)\.textContent/u.test(actionCenter)
   && (actionCenter.match(/menuItemLabel\(elements\.\w+\)\.textContent/gu) || []).length === 4);
 
+const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
+
+// Every chip app.js builds must carry the r005 base class and a tone, or the record rows
+// render as bare text under the r005 stylesheet.
+check("T126 every chip carries the r005 base class and a tone",
+  /if \(!parts\.includes\("chip"\)\) parts\.push\("chip"\)/u.test(actionCenter)
+  && /const CHIP_TONE = \{/u.test(actionCenter));
+
+// A panel can be reached two ways now: the Operations menu, and navigating to it. Both
+// have to load the same data, so loading is separate from opening and the shell fires
+// "show" on arrival. Without this, System → Historical Scan showed an empty folder tree.
+check("T127 panels load their data on arrival, not only when opened from the menu",
+  /async function loadHistoricalScanPanel\(\)/u.test(actionCenter)
+  && /async function loadArchiveExistingPanel\(\)/u.test(actionCenter)
+  && (actionCenter.match(/addEventListener\("show"/gu) || []).length === 3
+  && /dispatchEvent\(new Event\("show"\)\)/u.test(shellSource));
+
+check("T128 the manifest opens the r005 shell",
+  manifest.options_ui.page === "action-center/index.r005.html");
+
 // The shell must not grow a second copy of the record logic. It routes and it themes.
-const shell = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
+
 check("T124 the shell owns navigation only — no record state, no messenger calls",
-  !/messenger\./u.test(shell) && !/records/u.test(shell.replace(/data-screen="records"|go\("records"\)|"records"/gu, "")));
+  !/messenger\./u.test(shellSource) && !/records/u.test(shellSource.replace(/data-screen="records"|go\("records"\)|"records"/gu, "")));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
