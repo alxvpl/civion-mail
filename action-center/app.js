@@ -190,7 +190,7 @@ function cacheElements() {
     "settingAnalyzeJunk", "settingRetention", "settingMaxRecords", "settingDiagnostics",
     "saveSettingsButton", "diagnosticsButton", "diagnosticsDialog", "diagnosticsSummary",
     "diagnosticsStatus", "diagnosticsGenerated", "diagAddon", "diagThunderbird", "diagPlatform",
-    "diagCompatibility", "diagProvider", "diagNewMailListener", "diagMovedListener", "diagDeletedListener", "diagnosticsChecks",
+    "diagCompatibility", "diagProvider", "diagNewMailListener", "diagMovedListener", "diagDeletedListener", "diagnosticsAuthserv", "diagnosticsChecks",
     "diagAcceptanceStatus", "diagAcceptanceReset", "diagAcceptanceGates", "diagBackgroundActivations", "diagFilteredFolderEvents", "diagJunkExcluded", "diagJunkAnalyzed",
     "diagnosticsAccountsBody", "diagNewMailEvents", "diagMessagesSeen", "diagMessagesHandled",
     "diagAnalysisFailures", "diagMovedEvents", "diagDeletedEvents", "diagStorageRecords",

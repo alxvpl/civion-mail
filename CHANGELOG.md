@@ -1,5 +1,32 @@
 # CIVION Mail — CHANGELOG
 
+## v0.8.2 — 2026-09-12
+
+### One permission fewer, and a diagnostics panel that finishes rendering
+
+- **`downloads` is gone from the manifest.** Its only consumer,
+  `downloadBridgePayload`, had no call sites at all: the transport has been
+  `native_messaging_durable_spool` since v0.6.2, and the Action Center's exports
+  use an anchor download, which needs no permission. The extension was asking for
+  a file-writing permission it never exercised. Removing it makes the document
+  archive write boundary a property of the package rather than an intention —
+  the add-on recognises and prepares, the Desktop layer validates and writes.
+  The dead function and `DESKTOP_BRIDGE_SUBDIR` go with it.
+- **Diagnostics no longer breaks halfway.** `elements.diagnosticsAuthserv` was
+  read in three places and cached in none, so `clearNode(undefined)` threw inside
+  `renderDiagnostics`. Everything below the observed authserv-id list — the checks
+  table, the account coverage table and the operational counters — never rendered.
+  The id is now cached, and `T120` fails if any element is ever used without being
+  cached again.
+- **The permissions section of `README_BG.md` is correct again.** It still claimed
+  that `downloads` and native messaging were not requested; both had been in the
+  manifest since v0.6.0. `PRIVACY.md` now says plainly that the Downloads spool is
+  no longer written.
+
+Analysis rules are unchanged and stay `local-rules-0.8.0`. The ingestion contract,
+the native contract and the storage schema are unchanged. `T116` pins the new
+permission set, so a future addition has to be argued for rather than slipping in.
+
 ## v0.8.1 — 2026-09-07
 
 ### The deadline candidate Desktop is willing to accept

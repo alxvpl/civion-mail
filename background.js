@@ -84,7 +84,6 @@ const listenerState = {
 
 const HISTORICAL_SCAN_BATCH_SIZE = 10;
 const HISTORICAL_SCAN_MAX_MESSAGES = 50000;
-const DESKTOP_BRIDGE_SUBDIR = "CIVION/Mail/Outbox";
 const DESKTOP_NATIVE_HOST = "nl.civion.desktop";
 const DESKTOP_NATIVE_INBOX = "mail-native-inbox";
 const DESKTOP_BRIDGE_VERSION = "0.2";
@@ -102,21 +101,13 @@ function bridgeTimestamp(value = new Date()) {
   return value.toISOString().replace(/[-:]/gu, "").replace(/\.\d{3}Z$/u, "Z");
 }
 
-async function downloadBridgePayload(payload, filename) {
-  if (!messenger.downloads?.download) throw new Error("Thunderbird downloads API is unavailable");
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  try {
-    return await messenger.downloads.download({
-      url,
-      filename: `${DESKTOP_BRIDGE_SUBDIR}/${filename}`,
-      saveAs: false,
-      conflictAction: "uniquify"
-    });
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  }
-}
+// The Downloads spool was the pre-0.6.2 transport. Since the Desktop-owned Native
+// Messaging host became the transport, nothing called downloadBridgePayload, so the
+// extension asked for the downloads permission without ever exercising it. Removing
+// the function and the permission makes the write boundary a property of the package:
+// the add-on prepares candidates, the Desktop layer validates and writes.
+// Action Center exports are unaffected — they use an anchor download, which needs no
+// permission at all.
 
 async function sha256Hex(text) {
   const bytes = new TextEncoder().encode(text);

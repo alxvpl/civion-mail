@@ -381,9 +381,16 @@ Toolbar popup-ът съдържа два реални бутона: **Анали
 - `messagesTags` — създаване на CIVION Mail тагове при включен Auto Tag;
 - `messagesTagsList` — проверка на наличните тагове;
 - `storage` — локален анализ, настройки, metadata и diagnostics;
-- `menus` — видими команди в Tools и в контекстното меню на списъка с писма.
+- `menus` — видими команди в Tools и в контекстното меню на списъка с писма;
+- `nativeMessaging` — единствено връзка с локалния Desktop-owned host `nl.civion.desktop` на
+  същата машина, когато Desktop bridge е включен от Settings. Няма мрежов достъп.
 
-Не са заявени `downloads`, compose/send, move/delete, native messaging, webRequest или host permissions. JSON export се създава локално чрез `Blob` и download link в Action Center.
+Не са заявени `downloads`, compose/send, move/delete, webRequest или host permissions.
+JSON export се създава локално чрез `Blob` и anchor download в Action Center, което не
+изисква разрешение.
+
+Границата за запис на документи следва оттук: добавката разпознава и подготвя документа,
+а валидирането и физическият запис минават през Desktop слоя. Разширението не пише файлове.
 
 ## Локални данни и retention
 

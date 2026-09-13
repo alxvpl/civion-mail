@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CIVION Mail",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Local-first Thunderbird runtime with intelligent PDF classification, automatic new-mail archival and controlled all-account archival of existing documents to the validated CIVION archive on drive F:.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -25,7 +25,6 @@
     "messagesTagsList",
     "storage",
     "menus",
-    "downloads",
     "nativeMessaging"
   ],
   "background": {
