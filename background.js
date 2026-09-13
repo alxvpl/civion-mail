@@ -1,5 +1,5 @@
 import { analyzeMessage, CATEGORY_ORDER, PRIORITIES, listAuthservIds, evaluateSenderAdmissionSignals } from "./modules/analyzer.mjs";
-import { evaluateJunkAdmission } from "./modules/junk-admission.mjs";
+import { evaluateJunkAdmission, ADMISSION_PATHS, MIN_PRIOR_RECORDS } from "./modules/junk-admission.mjs";
 import { RELATIONSHIP_CLASSES, DOCUMENT_TYPES, RETENTION_CLASSES } from "./modules/semantic-model.mjs";
 import { buildCivionMailPackage } from "./modules/federation.mjs";
 import {
@@ -19,6 +19,11 @@ import {
   buildDocumentArchivePlans
 } from "./modules/document-archive.mjs";
 import { runSelfCheck, sanitizeDiagnosticReport } from "./modules/diagnostics.mjs";
+import {
+  OBSERVED_SERVICE_DOMAIN_ALLOWLIST,
+  PROTECTED_IDENTITIES,
+  KNOWN_PHISHING_ONLY_DOMAINS
+} from "./modules/protected-identities.mjs";
 import {
   SCHEMA_VERSION,
   clearClosedRecords,
@@ -83,7 +88,11 @@ const listenerState = {
 };
 
 const HISTORICAL_SCAN_BATCH_SIZE = 10;
-const HISTORICAL_SCAN_MAX_MESSAGES = 50000;
+const HISTORICAL_SCAN_MAX_MESSAGES = 20000;
+const HISTORICAL_SCAN_DEFAULT_MESSAGES = 2000;
+// Empty dates used to mean the whole mailbox. They now resolve to this window, and the
+// Action Center states the resolved dates in the confirmation before the run starts.
+const HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS = 12;
 const DESKTOP_NATIVE_HOST = "nl.civion.desktop";
 const DESKTOP_NATIVE_INBOX = "mail-native-inbox";
 const DESKTOP_BRIDGE_VERSION = "0.2";
@@ -1008,6 +1017,10 @@ async function processMessage(folder, message, options = {}) {
       analyzedAt: new Date().toISOString(),
       languageDetection: language,
       bodyStored: false,
+      // Additive, like typedFindings before it: a record written before the gate recorded
+      // its reasoning simply has no junkAdmission block, and Junk watch says so rather
+      // than inventing one. Only an admitted message reaches here at all.
+      ...(options.junkAdmission ? { junkAdmission: options.junkAdmission } : {}),
       ...analysis
     };
 
@@ -1127,8 +1140,9 @@ async function handleNewMail(folder, initialPage) {
     seen += 1;
     if (!accepted) continue;
     try {
+      let admission = null;
       if (isJunk) {
-        let admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
+        admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
         try {
           admission = await evaluateJunkMessage(message, allJunkFolderIds);
         } catch (error) {
@@ -1147,7 +1161,7 @@ async function handleNewMail(folder, initialPage) {
       // AUTO TAG mode. This path previously left `applyTag` unset, which means "apply".
       const record = await processMessage(folder, message, {
         folderAccepted: true,
-        ...(isJunk ? { applyTag: false } : {})
+        ...(isJunk ? { applyTag: false, junkAdmission: junkAdmissionRecordBlock(admission, admission.signals) } : {})
       });
       if (record) handled += 1;
       if (record?.analysisError) failed += 1;
@@ -1206,7 +1220,54 @@ async function evaluateJunkMessage(message, allJunkFolderIds = []) {
   const priorRecords = signals.domain
     ? (await getRecords()).filter((record) => senderDomainOf(record) === signals.domain)
     : [];
-  return evaluateJunkAdmission({ signals, priorRecords, junkFolderIds });
+  return { ...evaluateJunkAdmission({ signals, priorRecords, junkFolderIds }), signals };
+}
+
+/**
+ * What the gate decided, in a shape a record can carry and a screen can read. Only an
+ * admitted message gets one: r002 section 3 is explicit that a message which fails the
+ * gate receives no verdict, so there is nothing to write about it beyond a counter.
+ *
+ * The upstream junk marker is recorded as an observation. It is what the provider or
+ * Thunderbird thought, it is why the gate ran at all, and it is never evidence of trust.
+ */
+function junkAdmissionRecordBlock(admission, signals = {}) {
+  if (!admission?.admitted) return null;
+  const evidence = admission.evidence || {};
+  return {
+    admitted: true,
+    path: admission.path,
+    identity: admission.identity || null,
+    evaluatedAt: new Date().toISOString(),
+    reasons: [...(admission.reasons || [])],
+    // The conditions actually evaluated on this message, each with its own result, so the
+    // interface can show the ladder rather than a single yes.
+    conditions: admission.path === ADMISSION_PATHS.registryIdentity
+      ? [
+        { id: "protected-identity", label: "The sender claims a protected identity", result: "pass" },
+        { id: "domain-allowlisted", label: "The From domain is allowlisted for that identity", result: "pass" },
+        { id: "authenticated", label: "A trusted authentication service verified aligned control", result: "pass" }
+      ]
+      : [
+        { id: "message-authenticated", label: "This message passes authentication", result: signals.authenticationVerdict === "verified" ? "pass" : "fail" },
+        { id: "no-blocked-history", label: "No blocked record exists for the domain", result: evidence.blockedPresent ? "fail" : "pass" },
+        { id: "prior-records", label: `At least ${MIN_PRIOR_RECORDS} prior non-junk records`, result: (evidence.qualifyingCount ?? 0) >= MIN_PRIOR_RECORDS ? "pass" : "fail" },
+        { id: "prior-authenticated", label: "At least one prior non-junk record passed authentication", result: (evidence.verifiedCount ?? 0) >= 1 ? "pass" : "fail" }
+      ],
+    evidenceProvenance: admission.path === ADMISSION_PATHS.provenHistory
+      ? {
+        source: "local non-junk history for this sender domain",
+        qualifyingRecords: evidence.qualifyingCount ?? 0,
+        authenticatedRecords: evidence.verifiedCount ?? 0
+      }
+      : { source: "protected-identity registry shipped with the extension" },
+    upstreamMarker: {
+      observedAs: "junk",
+      by: "the mail provider or Thunderbird",
+      // Stated in the data, not only in the interface, so it cannot be read as trust.
+      note: "An observation about where the message was filed. It is never evidence of trust."
+    }
+  };
 }
 
 function senderDomainOf(record) {
@@ -1406,6 +1467,8 @@ function archiveExistingPublicState(job = archiveExistingJob) {
       accountCount: 0,
       folderCount: 0,
       cancelRequested: false,
+      limit: 0,
+      limitReached: false,
       pauseReason: "",
       restartedFrom: null,
       error: ""
@@ -1428,6 +1491,8 @@ function archiveExistingPublicState(job = archiveExistingJob) {
     accountCount: job.config?.accountCount ?? job.accountCount ?? 0,
     folderCount: job.config?.folderIds?.length ?? job.folderCount ?? 0,
     cancelRequested: job.cancelRequested === true,
+    limit: job.config?.maxMessages ?? 0,
+    limitReached: job.limitReached === true,
     pauseReason: job.pauseReason || "",
     restartedFrom: job.restartedFrom || null,
     error: job.error || ""
@@ -1445,6 +1510,26 @@ async function getArchiveExistingScope() {
     folderIds: normalFolders.map((folder) => folder.id),
     folderLabels: Object.fromEntries(normalFolders.map((folder) => [folder.id, `${folder.accountName} / ${folder.path}`]))
   };
+}
+
+// Decision r001 section 3 covers the PDF sweep as well as Historical Scan: the folder
+// scope is fixed, but the run still needs a real count ceiling and a real date floor.
+// The bound is resolved here so the config the job carries is the bound it ran under.
+function resolveArchiveExistingBounds(raw = {}) {
+  const parsedLimit = Number(raw.maxMessages);
+  const maxMessages = Math.min(
+    HISTORICAL_SCAN_MAX_MESSAGES,
+    Math.max(1, Number.isFinite(parsedLimit) && parsedLimit >= 1 ? Math.trunc(parsedLimit) : HISTORICAL_SCAN_DEFAULT_MESSAGES)
+  );
+  let fromDate = parseHistoricalDate(raw.dateFrom, false);
+  let toDate = parseHistoricalDate(raw.dateTo, true);
+  if (fromDate && toDate && fromDate >= toDate) throw new Error("The start date must be before the end date.");
+  if (!fromDate && !toDate) {
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime());
+    fromDate.setMonth(fromDate.getMonth() - HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS);
+  }
+  return { maxMessages, fromDate, toDate };
 }
 
 async function persistArchiveExistingState(job) {
@@ -1559,22 +1644,30 @@ async function processArchiveExistingBatch(job, messages) {
 async function runArchiveExisting(job) {
   let activeListId = null;
   try {
-    let page = await messenger.messages.query({
+    const queryInfo = {
       folderId: job.config.folderIds,
       autoPaginationTimeout: 750
-    });
-    while (page && !job.cancelRequested) {
+    };
+    if (job.config.fromDate) queryInfo.fromDate = job.config.fromDate;
+    if (job.config.toDate) queryInfo.toDate = job.config.toDate;
+    let page = await messenger.messages.query(queryInfo);
+    while (page && !job.cancelRequested && !job.limitReached) {
       activeListId = page.id || null;
       const pageMessages = Array.isArray(page.messages) ? page.messages : [];
-      for (let index = 0; index < pageMessages.length && !job.cancelRequested; index += HISTORICAL_SCAN_BATCH_SIZE) {
-        const batch = pageMessages.slice(index, index + HISTORICAL_SCAN_BATCH_SIZE);
+      for (let index = 0; index < pageMessages.length && !job.cancelRequested && !job.limitReached; index += HISTORICAL_SCAN_BATCH_SIZE) {
+        // The ceiling is enforced on the way in, so the run never examines one message
+        // more than the bound the user confirmed.
+        const remaining = job.config.maxMessages - job.examined;
+        if (remaining <= 0) { job.limitReached = true; break; }
+        const batch = pageMessages.slice(index, index + Math.min(HISTORICAL_SCAN_BATCH_SIZE, remaining));
         await enqueue(() => processArchiveExistingBatch(job, batch));
+        if (job.examined >= job.config.maxMessages) job.limitReached = true;
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      if (job.cancelRequested || !page.id) break;
+      if (job.cancelRequested || job.limitReached || !page.id) break;
       page = await messenger.messages.continueList(page.id);
     }
-    if (job.cancelRequested && activeListId && messenger.messages.abortList) {
+    if ((job.cancelRequested || job.limitReached) && activeListId && messenger.messages.abortList) {
       try { await messenger.messages.abortList(activeListId); } catch { /* best effort */ }
     }
     job.status = job.pauseReason ? "paused" : job.cancelRequested ? "cancelled" : "completed";
@@ -1589,10 +1682,11 @@ async function runArchiveExisting(job) {
   }
 }
 
-async function startArchiveExisting() {
+async function startArchiveExisting(raw = {}) {
   if (archiveExistingJob?.status === "running") throw new Error("Existing-document archive is already running.");
   if (historicalScanJob?.status === "running") throw new Error("Stop Historical Scan before starting the document archive.");
-  const config = await getArchiveExistingScope();
+  const scope = await getArchiveExistingScope();
+  const config = { ...scope, ...resolveArchiveExistingBounds(raw) };
   if (!config.folderIds.length) throw new Error("No normal mail folders are available.");
   const previous = archiveExistingJob || (await getState()).metadata?.documentArchiveBackfill;
   archiveExistingJob = {
@@ -1610,6 +1704,7 @@ async function startArchiveExisting() {
     failed: 0,
     currentFolder: "",
     cancelRequested: false,
+    limitReached: false,
     restartedFrom: ["cancelled", "interrupted", "paused", "failed"].includes(previous?.status) ? previous.jobId : null,
     error: "",
     pauseReason: "",
@@ -1670,13 +1765,22 @@ async function validateHistoricalScanConfig(raw = {}) {
     .map(String)
     .filter((id) => validFolders.has(id)))];
   if (!folderIds.length) throw new Error("Select at least one folder for Historical Scan.");
+  // Decision r001 section 3: historical processing is bounded. No value means "no
+  // limit" any more, and empty dates resolve to a stated window instead of the whole
+  // mailbox, so the run always has both a real count ceiling and a real date floor.
   const parsedLimit = Number(raw.maxMessages);
-  const maxMessages = parsedLimit === 0
-    ? 0
-    : Math.min(HISTORICAL_SCAN_MAX_MESSAGES, Math.max(1, Number.isFinite(parsedLimit) ? Math.trunc(parsedLimit) : 5000));
-  const fromDate = parseHistoricalDate(raw.dateFrom, false);
-  const toDate = parseHistoricalDate(raw.dateTo, true);
+  const maxMessages = Math.min(
+    HISTORICAL_SCAN_MAX_MESSAGES,
+    Math.max(1, Number.isFinite(parsedLimit) && parsedLimit >= 1 ? Math.trunc(parsedLimit) : HISTORICAL_SCAN_DEFAULT_MESSAGES)
+  );
+  let fromDate = parseHistoricalDate(raw.dateFrom, false);
+  let toDate = parseHistoricalDate(raw.dateTo, true);
   if (fromDate && toDate && fromDate >= toDate) throw new Error("The start date must be before the end date.");
+  if (!fromDate && !toDate) {
+    toDate = new Date();
+    fromDate = new Date(toDate.getTime());
+    fromDate.setMonth(fromDate.getMonth() - HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS);
+  }
   return {
     folderIds,
     maxMessages,
@@ -1718,8 +1822,9 @@ async function processHistoricalBatch(job, messages) {
       // The gate runs before the existing-record branch. Ordered the other way, a record
       // created before the gate existed was refreshed and its source state reasserted
       // without ever being evaluated against Path A or Path B.
+      let admission = null;
       if (isJunkMessage) {
-        let admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
+        admission = { admitted: false, reasons: ["The admission gate could not be evaluated."] };
         try {
           admission = await evaluateJunkMessage(message, job.config.allJunkFolderIds);
         } catch (error) {
@@ -1756,6 +1861,7 @@ async function processHistoricalBatch(job, messages) {
         folderAccepted: true,
         // Read-only over Junk: an admitted message is analysed and reported, never marked.
         applyTag: isJunkMessage ? false : job.config.applyTags,
+        ...(isJunkMessage ? { junkAdmission: junkAdmissionRecordBlock(admission, admission.signals) } : {}),
         updateBadge: false,
         emitBridge: false,
         archiveDocuments: false
@@ -2026,6 +2132,179 @@ function normalizeContextDomain(value) {
   return domain;
 }
 
+// Identity state has one owner, and it is here. The Action Center never keeps a sender
+// database of its own: it asks for this snapshot, derives Trust and the sender queue in
+// Review from it plus the records it already has, and asks the background to change
+// anything. Every value is normalised on this side of the boundary, so a view never has
+// to decide what a domain or an authserv-id looks like.
+//
+// Provenance is part of the contract, not decoration: "user" is something the person did,
+// "built-in" ships with the extension, "observed" is corpus-derived and is explicitly not
+// a trust decision.
+async function getIdentityState() {
+  const settings = await getSettings();
+  const userAllowlisted = new Set(settings.userAllowlistedDomains || []);
+  const userBlocked = new Set(settings.userBlockedDomains || []);
+
+  const allowlistedDomains = [
+    ...[...userAllowlisted].map((domain) => ({ domain, provenance: "user" })),
+    ...OBSERVED_SERVICE_DOMAIN_ALLOWLIST
+      .filter((domain) => !userAllowlisted.has(domain))
+      .map((domain) => ({ domain, provenance: "observed" }))
+  ];
+
+  const blockedDomains = [
+    ...[...userBlocked].map((domain) => ({ domain, provenance: "user" })),
+    ...KNOWN_PHISHING_ONLY_DOMAINS
+      .filter((domain) => !userBlocked.has(domain))
+      .map((domain) => ({ domain, provenance: "built-in" }))
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    trustedAuthservIds: (settings.trustedAuthservIds || []).map((id) => ({ id, provenance: "user" })),
+    allowlistedDomains,
+    blockedDomains,
+    // The matching patterns stay in the background. A view has no business running them,
+    // and a RegExp does not survive the message boundary anyway.
+    protectedIdentities: PROTECTED_IDENTITIES.map((identity) => ({
+      id: identity.id,
+      label: identity.label,
+      domains: [...identity.domains],
+      provenance: "built-in"
+    }))
+  };
+}
+
+/**
+ * Junk watch, as a projection rather than a store. It is deliberately not part of the
+ * identity snapshot: identity is about domains the person has decided on, this is about
+ * what the admission gate did to individual messages, and joining them in the background
+ * would hide which of the two a screen is actually showing.
+ *
+ * r002 section 3 draws the line this follows: a message that failed the gate received no
+ * verdict, so it appears here only in a counter. Turning those into a list would make the
+ * extension publish spam judgements it explicitly refuses to make.
+ */
+async function getJunkAdmissionState() {
+  const records = await getRecords();
+  const admitted = records
+    .filter((record) => record?.junkAdmission?.admitted === true)
+    .map((record) => ({
+      recordId: record.id,
+      identityKey: record.identityKey || null,
+      headerMessageId: record.headerMessageId || null,
+      sender: record.sender || "",
+      subject: record.subject || "",
+      receivedAt: record.receivedAt || null,
+      folderName: record.folderName || "",
+      admission: record.junkAdmission
+    }))
+    .sort((a, b) => Date.parse(b.receivedAt || 0) - Date.parse(a.receivedAt || 0));
+
+  const metadata = (await getState()).metadata || {};
+  const operational = metadata.operational || {};
+
+  return {
+    generatedAt: new Date().toISOString(),
+    admitted,
+    // Counters only. There is no not-admitted list, and there is no place in this contract
+    // to put one.
+    notAdmitted: {
+      messageCount: Number(operational.junkNotAdmittedMessageCount || 0),
+      note: "Not analysed is not a spam verdict. These messages were left alone and no judgement about them is stored."
+    },
+    // Records written before the gate recorded its reasoning carry no block; saying how
+    // many keeps the screen from implying it can explain every admitted record.
+    admittedWithoutReasoning: records
+      .filter((record) => record?.admittedFromJunk === true && !record?.junkAdmission)
+      .length,
+    userOverrides: {
+      supported: false,
+      note: "The runtime keeps no per-message override of the gate. A domain decision in Trust is the only lever, and it applies to every message from that domain."
+    }
+  };
+}
+
+// Three of the five Review queues are derivable from the records alone. Two are not:
+// a reading you rejected, and a rule that has only just started acting on your mail. Both
+// are decisions or observations about the runtime rather than about a message, so they
+// live here, in metadata, and reach the Action Center only as this snapshot.
+//
+// Rejections are keyed by record and finding, the same identity Dates uses, so the two
+// screens cannot end up describing the same reading differently. They are kept in
+// metadata rather than on the record so that re-analysis cannot quietly discard them.
+const REVIEW_REJECTION_KEY = (recordId, findingId) => `${recordId}::${findingId}`;
+
+async function getReviewState() {
+  const records = await getRecords();
+  const metadata = (await getState()).metadata || {};
+  const rejections = metadata.reviewRejections || {};
+  const acknowledged = metadata.acknowledgedRules || {};
+
+  // What the analyser identities actually are, and when each first produced a record.
+  // "Newly acting" is not a guess: it is a rule this mailbox has records from that the
+  // person has not acknowledged yet.
+  const rules = new Map();
+  for (const record of records) {
+    const provider = record.analysisProvider || {};
+    const id = provider.id || "unknown";
+    const at = Date.parse(record.analyzedAt || record.receivedAt || 0);
+    let rule = rules.get(id);
+    if (!rule) {
+      rule = { id, label: provider.label || id, recordCount: 0, firstSeenAt: null, lastSeenAt: null };
+      rules.set(id, rule);
+    }
+    rule.recordCount += 1;
+    if (Number.isFinite(at)) {
+      if (rule.firstSeenAt === null || at < rule.firstSeenAt) rule.firstSeenAt = at;
+      if (rule.lastSeenAt === null || at > rule.lastSeenAt) rule.lastSeenAt = at;
+    }
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    rejections: Object.entries(rejections).map(([key, value]) => ({
+      key,
+      recordId: String(key).split("::")[0],
+      findingId: String(key).split("::").slice(1).join("::") || null,
+      rejectedAt: value?.at || null,
+      reason: value?.reason || ""
+    })),
+    rules: [...rules.values()].map((rule) => ({
+      ...rule,
+      firstSeenAt: rule.firstSeenAt ? new Date(rule.firstSeenAt).toISOString() : null,
+      lastSeenAt: rule.lastSeenAt ? new Date(rule.lastSeenAt).toISOString() : null,
+      acknowledged: Boolean(acknowledged[rule.id]),
+      acknowledgedAt: acknowledged[rule.id]?.at || null
+    })).sort((a, b) => String(b.firstSeenAt).localeCompare(String(a.firstSeenAt)))
+  };
+}
+
+async function setReviewRejection(recordId, findingId, rejected, reason = "") {
+  const id = String(recordId || "").trim();
+  const finding = String(findingId || "").trim();
+  if (!id || !finding) throw new Error("A rejection needs both a record and a finding.");
+  const key = REVIEW_REJECTION_KEY(id, finding);
+  await updateMetadata((metadata) => {
+    const next = { ...(metadata.reviewRejections || {}) };
+    if (rejected) next[key] = { at: new Date().toISOString(), reason: String(reason || "").slice(0, 400) };
+    else delete next[key];
+    return { ...metadata, reviewRejections: next };
+  });
+  return { key, rejected: Boolean(rejected) };
+}
+
+async function acknowledgeRule(ruleId) {
+  const id = String(ruleId || "").trim();
+  if (!id) throw new Error("A rule acknowledgement needs a rule identity.");
+  await updateMetadata((metadata) => ({
+    ...metadata,
+    acknowledgedRules: { ...(metadata.acknowledgedRules || {}), [id]: { at: new Date().toISOString() } }
+  }));
+  return { ruleId: id };
+}
+
 async function setDomainDisposition(domainValue, disposition) {
   const domain = normalizeContextDomain(domainValue);
   if (!domain) throw new Error("Invalid sender domain.");
@@ -2169,6 +2448,23 @@ async function handleRuntimeMessage(request) {
     await updateActionCenterBadge();
     return { ok: true, remaining };
   }
+  if (type === "getIdentityState") {
+    return { ok: true, identity: await getIdentityState() };
+  }
+  if (type === "getJunkAdmissionState") {
+    return { ok: true, junk: await getJunkAdmissionState() };
+  }
+  if (type === "getReviewState") {
+    return { ok: true, review: await getReviewState() };
+  }
+  if (type === "setReviewRejection") {
+    const result = await setReviewRejection(request.recordId, request.findingId, request.rejected, request.reason);
+    return { ok: true, ...result };
+  }
+  if (type === "acknowledgeRule") {
+    const result = await acknowledgeRule(request.ruleId);
+    return { ok: true, ...result };
+  }
   if (type === "setDomainDisposition") {
     const result = await setDomainDisposition(request.domain, request.disposition);
     return { ok: true, ...result };
@@ -2203,7 +2499,7 @@ async function handleRuntimeMessage(request) {
     return { ok: true, archive: archiveExistingPublicState() };
   }
   if (type === "startArchiveExisting") {
-    const archive = await startArchiveExisting();
+    const archive = await startArchiveExisting(request?.config || {});
     return { ok: true, archive };
   }
   if (type === "cancelArchiveExisting") {

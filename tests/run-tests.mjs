@@ -8,6 +8,21 @@ import { describeNarrowing, emptyResultText, narrowingText } from "../modules/vi
 import { evaluateJunkAdmission, collectPriorEvidence, ADMISSION_PATHS, MIN_PRIOR_RECORDS } from "../modules/junk-admission.mjs";
 import { buildDocumentArchivePlans, DOCUMENT_ARCHIVE_ROOT } from "../modules/document-archive.mjs";
 import { ARCHIVE_BACKFILL_EXCLUDED_SPECIAL_USES, isNormalArchiveFolder } from "../modules/archive-backfill.mjs";
+import { deriveTrust, deriveSenderReview } from "../action-center/views-identity.mjs";
+import {
+  deriveJunkWatch,
+  deriveUncertain,
+  deriveUnreadable,
+  deriveMarkedIncorrect,
+  deriveRejected,
+  deriveNewRules
+} from "../action-center/views-review.mjs";
+import { deriveDates, countDates, DATE_FILTERS } from "../action-center/views-dates.mjs";
+import {
+  summarise as summariseToday,
+  decisionReason as decisionReasonToday,
+  attentionReason as attentionReasonToday
+} from "../action-center/views-today.mjs";
 import {
   MAIL_RUNTIME_CONTRACT_VERSION,
   MailRuntimeDisconnectedError,
@@ -301,9 +316,15 @@ check("T39 the gate runs before analysis and storage in the scan loop",
   bg.indexOf("evaluateJunkMessage(message, job)") < bg.indexOf("const record = await processMessage(message.folder || null, message, {")
   && /if \(!admission\.admitted\) \{[\s\S]*?job\.junkNotAdmitted \+= 1;[\s\S]*?continue;/u.test(bg));
 
+// The declaration moved out of the if-block when the admission result started travelling
+// onto the record, so the pattern is written against the assignment rather than the
+// declaration. What it guards is unchanged: both junk paths start at not-admitted, and a
+// gate that throws is logged and leaves that default standing.
 check("T40 an unevaluable gate fails closed rather than admitting",
-  /let admission = \{ admitted: false/u.test(bg)
-  && /JUNK_ADMISSION_EVALUATION_FAILED/u.test(bg));
+  (bg.match(/admission = \{ admitted: false, reasons: \["The admission gate could not be evaluated\."\] \};/gu) || []).length === 2
+  && (bg.match(/let admission = null;/gu) || []).length === 2
+  && /JUNK_ADMISSION_EVALUATION_FAILED/u.test(bg)
+  && !/catch[\s\S]{0,200}admitted: true/u.test(bg));
 
 check("T41 Path B evidence excludes junk folders across the whole account tree",
   /allJunkFolderIds:/u.test(bg) && /job\.config\.allJunkFolderIds/u.test(bg));
@@ -419,9 +440,12 @@ check("T57 bulk archive bypasses the live automatic setting only for its explici
   /force: true,[\s\S]*?verifyExisting: true/u.test(archiveBatch)
   && /archiveDocuments: false/u.test(archiveBatch));
 
-check("T58 all-account scope is fixed to recommended normal folders with no date or message limit",
+// The folder scope is still fixed to recommended normal folders and the interface still
+// says so. What changed with decision r001 section 3 is the rest of it: the run now
+// carries a date window and a count ceiling, so the text no longer claims neither.
+check("T58 all-account scope is fixed to recommended normal folders, and the run is bounded",
   /accounts\.flatMap\(\(account\) => account\.folders[\s\S]*?\.filter\(\(folder\) => folder\.recommended\)/u.test(bg)
-  && /No date or message limit\./u.test(actionCenter));
+  && /The folder scope is fixed; the date window and the message ceiling are set below\./u.test(actionCenter));
 
 check("T59 bulk archive supports stop and safe continuation after interruption",
   /cancelArchiveExisting/u.test(bg)
@@ -1053,6 +1077,436 @@ const usedButNotCached = usedElementNames.filter((name) => !requestedIds.include
 check("T120 every element the code reads is cached, so none of them is undefined at runtime",
   usedElementNames.length > 60 && usedButNotCached.length === 0,
   `used=${usedElementNames.length} uncached=${usedButNotCached.join(",") || "none"}`);
+
+// Decision r001 section 3. The old configuration had two ways to run without a bound:
+// maxMessages 0 meant no limit, and two empty dates meant the whole mailbox. Neither may
+// come back, and the Action Center must state the resolved window before starting.
+const boundedLimit = /const maxMessages = Math\.min\(\s*HISTORICAL_SCAN_MAX_MESSAGES/u.test(bg)
+  && !/parsedLimit === 0/u.test(bg)
+  && /HISTORICAL_SCAN_DEFAULT_MESSAGES\s*=\s*\d+/u.test(bg);
+const boundedWindow = /if \(!fromDate && !toDate\)/u.test(bg)
+  && /HISTORICAL_SCAN_DEFAULT_WINDOW_MONTHS/u.test(bg);
+check("T121 a Historical Scan always has a count bound and a date window",
+  boundedLimit && boundedWindow,
+  `limit=${boundedLimit} window=${boundedWindow}`);
+
+check("T122 the Action Center states the resolved bound before the run starts",
+  /resolvedHistoricalWindow\(/u.test(actionCenter)
+  && /at most \$\{Math\.trunc\(maxMessages\)\} messages between/u.test(actionCenter)
+  && !/no limit/u.test(actionCenter)
+  && !/means no limit/u.test(markup));
+
+// The r005 shell is a second entry point into the same app.js, so it lives or dies by the
+// same binding contract. Keeping this here means the two markups can never drift apart.
+const markupR005 = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
+const r005Ids = [...markupR005.matchAll(/\sid="([^"]+)"/gu)].map((m) => m[1]);
+const r005Missing = requestedIds.filter((id) => !r005Ids.includes(id));
+const r005Duplicate = r005Ids.filter((id, index) => r005Ids.indexOf(id) !== index);
+check("T123 the r005 shell satisfies the same element contract as the shipped markup",
+  r005Missing.length === 0 && r005Duplicate.length === 0,
+  `missing=${r005Missing.join(",")} duplicate=${r005Duplicate.join(",")}`);
+
+// An Operations menu item carries a label and the note that explains what it does.
+// Writing textContent on the button deleted both the first time a run started, and the
+// note never came back until the panel was reloaded.
+check("T125 running state is written into the menu item label, not over the whole button",
+  /function menuItemLabel\(/u.test(actionCenter)
+  && !/elements\.(historicalScanButton|archiveExistingButton)\.textContent/u.test(actionCenter)
+  && (actionCenter.match(/menuItemLabel\(elements\.\w+\)\.textContent/gu) || []).length === 4);
+
+const shellSource = readFileSync(new URL("../action-center/ui-shell.mjs", import.meta.url), "utf8");
+const todaySource = readFileSync(new URL("../action-center/views-today.mjs", import.meta.url), "utf8");
+const identitySource = readFileSync(new URL("../action-center/views-identity.mjs", import.meta.url), "utf8");
+const reviewSource = readFileSync(new URL("../action-center/views-review.mjs", import.meta.url), "utf8");
+const datesSource = readFileSync(new URL("../action-center/views-dates.mjs", import.meta.url), "utf8");
+const analyzerSource2 = readFileSync(new URL("../modules/analyzer.mjs", import.meta.url), "utf8");
+
+// Every chip app.js builds must carry the r005 base class and a tone, or the record rows
+// render as bare text under the r005 stylesheet.
+check("T126 every chip carries the r005 base class and a tone",
+  /if \(!parts\.includes\("chip"\)\) parts\.push\("chip"\)/u.test(actionCenter)
+  && /const CHIP_TONE = \{/u.test(actionCenter));
+
+// A panel can be reached two ways now: the Operations menu, and navigating to it. Both
+// have to load the same data, so loading is separate from opening and the shell fires
+// "show" on arrival. Without this, System → Historical Scan showed an empty folder tree.
+check("T127 panels load their data on arrival, not only when opened from the menu",
+  /async function loadHistoricalScanPanel\(\)/u.test(actionCenter)
+  && /async function loadArchiveExistingPanel\(\)/u.test(actionCenter)
+  && (actionCenter.match(/addEventListener\("show"/gu) || []).length === 3
+  && /dispatchEvent\(new Event\("show"\)\)/u.test(shellSource));
+
+// The PDF sweep was the half of decision r001 section 3 that had not been done: fixed
+// folder scope, but no date window and no count ceiling. It is bounded the same way now,
+// and the reconciliation gap the panel used to declare is gone because it is closed.
+check("T129 the PDF archive sweep is bounded too",
+  /function resolveArchiveExistingBounds\(/u.test(bg)
+  && /async function startArchiveExisting\(raw = \{\}\)/u.test(bg)
+  && /const config = \{ \.\.\.scope, \.\.\.resolveArchiveExistingBounds\(raw\) \};/u.test(bg)
+  && /job\.limitReached = true/u.test(bg)
+  && /queryInfo\.fromDate = job\.config\.fromDate/u.test(bg));
+
+check("T130 the sweep states its bound before the run starts, and claims no unlimited scope",
+  /at most \$\{Math\.trunc\(maxMessages\)\} messages examined, between/u.test(actionCenter)
+  && !/No date or message limit/u.test(actionCenter)
+  && !/no date limit and no count limit/iu.test(markupR005));
+
+// Today is derived from the record set. The audit that produced r003 turned on exactly
+// this: a queue and a record must not be added together, and a summary figure must come
+// from the same data as the list under it. Both are testable without a DOM.
+const overdueRecord = { status: "New", deadline: { date: "2026-09-01", overdue: true } };
+const bothRecord = { status: "New", needsVerification: ["deadline"], deadline: { date: "2026-09-01", overdue: true } };
+const flagged = { status: "New", markedIncorrect: true };
+const closed = { status: "Completed", markedIncorrect: true, deadline: { date: "2026-09-01", overdue: true } };
+const summary = summariseToday([overdueRecord, bothRecord, flagged, closed], Date.parse("2026-09-12T00:00:00"));
+
+check("T131 a record that needs a decision is not also counted as other attention",
+  summary.decisions.length === 1 && summary.attention.length === 2,
+  `decisions=${summary.decisions.length} attention=${summary.attention.length}`);
+
+check("T132 a closed record is neither a decision nor an attention item",
+  decisionReasonToday(closed) === null && attentionReasonToday(closed, Date.parse("2026-09-12T00:00:00")) === null);
+
+check("T133 the Today figures are the lengths of the lists they head",
+  /\$\("todayDecisionBig"\)\.textContent = String\(decisions\.length\)/u.test(todaySource)
+  && /\$\("todayOtherBig"\)\.textContent = String\(attention\.length\)/u.test(todaySource)
+  && /fillQueue\(\$\("todayDecisionList"\), groupCount\(decisions\)/u.test(todaySource));
+
+check("T134 the derived view reads a published snapshot and owns no record state",
+  /document\.dispatchEvent\(new CustomEvent\("civion:state"/u.test(actionCenter)
+  && !/messenger\./u.test(todaySource)
+  && !/send\(/u.test(todaySource));
+
+// Identity state has one owner. Trust and the sender queue in Review are joins of the
+// record set with the snapshot the background publishes — there is no sender database in
+// the Action Center, and provenance travels with every disposition because "you allowed
+// this" and "the corpus has seen this" are different facts.
+const IDENTITY_FIXTURE = {
+  trustedAuthservIds: [{ id: "mx.example.invalid", provenance: "user" }],
+  allowlistedDomains: [
+    { domain: "allowed.example.invalid", provenance: "user" },
+    { domain: "observed.example.invalid", provenance: "observed" }
+  ],
+  blockedDomains: [
+    { domain: "blocked.example.invalid", provenance: "user" },
+    { domain: "phish.example.invalid", provenance: "built-in" }
+  ],
+  protectedIdentities: [
+    { id: "gemeente", label: "Gemeente", domains: ["allowed.example.invalid"], provenance: "built-in" }
+  ]
+};
+const identityRecord = (domain, over = {}) => ({
+  status: "New", sender: domain, senderAddress: `post@${domain}`, receivedAt: "2026-09-10T08:00:00.000Z", ...over
+});
+const trustRows = deriveTrust([
+  identityRecord("allowed.example.invalid"),
+  identityRecord("observed.example.invalid"),
+  identityRecord("blocked.example.invalid"),
+  identityRecord("unknown.example.invalid")
+], IDENTITY_FIXTURE);
+const byDomain = Object.fromEntries(trustRows.map((row) => [row.domain, row]));
+
+check("T135 a disposition carries its provenance, and observed is not a decision",
+  byDomain["allowed.example.invalid"].dispositionLabel === "allowed by you"
+  && byDomain["observed.example.invalid"].dispositionLabel === "observed service domain"
+  && byDomain["blocked.example.invalid"].dispositionLabel === "blocked by you"
+  && byDomain["unknown.example.invalid"].dispositionLabel === "no disposition",
+  trustRows.map((row) => `${row.domain}=${row.dispositionLabel}`).join(" "));
+
+check("T136 Trust rows come from the records, not from the lists",
+  trustRows.length === 4
+  && !trustRows.some((row) => row.domain === "phish.example.invalid")
+  && byDomain["allowed.example.invalid"].protectedIdentity?.label === "Gemeente",
+  `rows=${trustRows.length}`);
+
+const senderQueue = deriveSenderReview([
+  identityRecord("blocked.example.invalid"),
+  identityRecord("allowed.example.invalid", { admittedFromJunk: true }),
+  identityRecord("phish.example.invalid"),
+  identityRecord("observed.example.invalid", { admittedFromJunk: true }),
+  identityRecord("failed.example.invalid", { senderTrust: { authentication: { verdict: "failed" } } }),
+  identityRecord("closed.example.invalid", { status: "Completed", admittedFromJunk: true })
+], IDENTITY_FIXTURE);
+
+check("T137 the sender queue holds only what you have not decided, and never a closed record",
+  senderQueue.length === 3
+  && senderQueue.some((item) => item.domain === "phish.example.invalid")
+  && senderQueue.some((item) => item.domain === "observed.example.invalid")
+  && senderQueue.some((item) => item.domain === "failed.example.invalid")
+  && !senderQueue.some((item) => ["blocked.example.invalid", "allowed.example.invalid", "closed.example.invalid"].includes(item.domain)),
+  senderQueue.map((item) => item.domain).join(" "));
+
+check("T138 the identity snapshot is read-only in the Action Center and asked for once",
+  /function deepFreeze\(/u.test(actionCenter)
+  && /deepFreeze\(response\.identity\)/u.test(actionCenter)
+  && (actionCenter.match(/send\("getIdentityState"\)/gu) || []).length === 1
+  && !/messenger\./u.test(identitySource)
+  && !/send\(/u.test(identitySource));
+
+check("T139 a view asks for an identity change and never performs one",
+  /document\.addEventListener\("civion:identity-command"/u.test(actionCenter)
+  && /send\("setDomainDisposition"/u.test(actionCenter)
+  && /dispatchEvent\(new CustomEvent\("civion:identity-command"/u.test(identitySource)
+  && /type === "getIdentityState"/u.test(bg)
+  && /provenance: "observed"/u.test(bg)
+  && /provenance: "built-in"/u.test(bg));
+
+// Junk watch is its own read-only projection, and decision r002 section 3 is the line it
+// follows: a message that failed the gate received no verdict, so it exists here only as a
+// counter. A list of them would be the spam judgement the gate refuses to make.
+const junkSnapshot = {
+  admitted: [{
+    recordId: "r1",
+    sender: "Stroomnet Zuid",
+    subject: "Jaarafrekening",
+    admission: {
+      admitted: true,
+      path: "proven_history",
+      conditions: [{ id: "prior-records", label: "At least 2 prior non-junk records", result: "pass" }],
+      evidenceProvenance: { source: "local non-junk history", qualifyingRecords: 4, authenticatedRecords: 2 },
+      upstreamMarker: { observedAs: "junk", by: "the mail provider or Thunderbird" }
+    }
+  }],
+  notAdmitted: { messageCount: 12 },
+  admittedWithoutReasoning: 3,
+  userOverrides: { supported: false }
+};
+const junkView = deriveJunkWatch([{ id: "r1", sender: "Stroomnet Zuid" }], junkSnapshot);
+
+check("T140 Junk watch shows admitted records and the path that admitted each one",
+  junkView.admitted.length === 1
+  && junkView.admitted[0].pathLabel === "proven personal history"
+  && junkView.admitted[0].record?.id === "r1",
+  JSON.stringify(junkView.admitted.map((entry) => entry.pathLabel)));
+
+check("T141 not-admitted messages are a counter and never a list",
+  junkView.notAdmittedCount === 12
+  && !("notAdmitted" in junkView && Array.isArray(junkView.notAdmitted))
+  && !/notAdmitted:\s*\[/u.test(bg)
+  && /messageCount: Number\(operational\.junkNotAdmittedMessageCount/u.test(bg)
+  && /not a spam verdict/u.test(bg));
+
+check("T142 admitted records without recorded reasoning are counted, not given an invented one",
+  junkView.withoutReasoning === 3
+  && /admittedWithoutReasoning/u.test(bg)
+  && /admittedWithoutReasoning/u.test(reviewSource));
+
+check("T143 the junk projection is separate from identity, read-only, and freed of messenger",
+  /type === "getJunkAdmissionState"/u.test(bg)
+  && !/junkAdmission/u.test(identitySource)
+  && /deepFreeze\(response\.junk\)/u.test(actionCenter)
+  && !/messenger\./u.test(reviewSource)
+  && !/send\(/u.test(reviewSource));
+
+check("T144 the upstream junk marker is carried as an observation, never as trust",
+  /upstreamMarker/u.test(bg)
+  && /never evidence of trust/u.test(bg)
+  && /never evidence of trust/u.test(bg));
+
+// Dates is a projection over the records, with `now` passed in so every case is
+// deterministic. A row is a finding, not a record.
+const DATES_NOW = Date.parse("2026-09-12T09:00:00");
+const finding = (over) => ({ actionRequired: false, needsVerification: false, dateAlternatives: [], ...over });
+const DATE_RECORDS = [
+  // One record, two roles: an obligation and an appointment.
+  {
+    id: "two-roles", status: "New", sender: "Gemeente", subject: "Besluit",
+    typedFindings: [
+      finding({ id: "deadline:2026-09-30", type: "deadline", temporalRole: "due_by", date: "2026-09-30", actionRequired: true, evidence: "voor 30 september" }),
+      finding({ id: "appointment:2026-10-08", type: "appointment", temporalRole: "appointment_date", date: "2026-10-08", evidence: "op 8 oktober" })
+    ]
+  },
+  // An optional cancellation window, even though it is dated and in the future.
+  {
+    id: "optional", status: "New", sender: "Meander", subject: "Verlenging",
+    typedFindings: [finding({ id: "cancellation_window:2026-11-30", type: "cancellation_window", temporalRole: "cancellation_deadline", date: "2026-11-30", evidence: "tot 30 november" })]
+  },
+  // A proven obligation whose date has passed.
+  {
+    id: "overdue", status: "In progress", sender: "Kade", subject: "Herinnering",
+    typedFindings: [finding({ id: "payment:2026-09-05", type: "payment", temporalRole: "payment_due", date: "2026-09-05", actionRequired: true, evidence: "uiterlijk 5 september" })]
+  },
+  // An information date, and next to it a deadline the person still has to confirm.
+  {
+    id: "unsettled", status: "New", sender: "Zorgpolis", subject: "Wijziging",
+    needsVerification: ["deadline"],
+    typedFindings: [
+      finding({ id: "information:2027-01-01", type: "information", temporalRole: "effective_or_informational_date", date: "2027-01-01", evidence: "per 1 januari" }),
+      finding({ id: "deadline:2026-12-31", type: "deadline", temporalRole: "due_by", date: "2026-12-31", actionRequired: true, needsVerification: true, dateAlternatives: ["2026-12-31", "2026-03-12"], evidence: "voor 31-12" })
+    ]
+  },
+  // A closed record. Its date stays visible in All and counts nowhere else.
+  {
+    id: "closed", status: "Completed", sender: "Bibliotheek", subject: "Verlengd",
+    typedFindings: [finding({ id: "renewal:2026-08-28", type: "renewal", temporalRole: "renewal_effective_date", date: "2026-08-28", evidence: "per 28 augustus" })]
+  },
+  // A failed analysis with a date. It must not read as "no action".
+  {
+    id: "failed", status: "New", sender: "Onbekend", subject: "Onleesbaar", analysisError: true,
+    typedFindings: [finding({ id: "deadline:2026-10-01", type: "deadline", temporalRole: "due_by", date: "2026-10-01", actionRequired: true, evidence: "" })]
+  },
+  // An undated finding is not a date at all.
+  {
+    id: "undated", status: "New", sender: "Geen datum", subject: "Zonder datum",
+    typedFindings: [finding({ id: "payment:none", type: "payment", temporalRole: "payment_due", date: null, actionRequired: true })]
+  }
+];
+const dateRows = deriveDates(DATE_RECORDS, DATES_NOW);
+const dateById = Object.fromEntries(dateRows.map((row) => [row.id, row]));
+const dateCounts = countDates(dateRows);
+
+check("T145 one record can produce more than one dated row, each with its own role",
+  dateRows.filter((row) => row.recordId === "two-roles").length === 2
+  && dateById["two-roles::deadline:2026-09-30"].role === "deadline"
+  && dateById["two-roles::appointment:2026-10-08"].role === "appointment",
+  dateRows.filter((row) => row.recordId === "two-roles").map((row) => row.role).join(" "));
+
+check("T146 an undated finding produces no row",
+  !dateRows.some((row) => row.recordId === "undated") && dateRows.length === 8,
+  `rows=${dateRows.length}`);
+
+check("T147 a deadline is not every date: only a proven obligation obliges",
+  dateById["two-roles::deadline:2026-09-30"].obliging === true
+  && dateById["two-roles::appointment:2026-10-08"].obliging === false
+  && dateById["unsettled::information:2027-01-01"].obliging === false
+  && dateById["closed::renewal:2026-08-28"].obliging === false);
+
+check("T148 an optional cancellation window is never an obligation and never overdue",
+  dateById["optional::cancellation_window:2026-11-30"].optional === true
+  && dateById["optional::cancellation_window:2026-11-30"].obliging === false
+  && dateById["optional::cancellation_window:2026-11-30"].overdue === false);
+
+check("T149 overdue comes from a proven operational date and stays visible",
+  dateById["overdue::payment:2026-09-05"].overdue === true
+  && dateById["overdue::payment:2026-09-05"].daysFromToday === -7
+  && dateCounts.overdue === 1
+  && dateRows.some((row) => row.id === "overdue::payment:2026-09-05"));
+
+check("T150 an unsettled date is not promoted to operational, and its neighbour is untouched",
+  dateById["unsettled::deadline:2026-12-31"].unsettled === true
+  && dateById["unsettled::deadline:2026-12-31"].obliging === false
+  && dateById["unsettled::deadline:2026-12-31"].ambiguous === true
+  && dateById["unsettled::information:2027-01-01"].unsettled === false,
+  `deadline=${dateById["unsettled::deadline:2026-12-31"].unsettled} information=${dateById["unsettled::information:2027-01-01"].unsettled}`);
+
+check("T151 a closed record keeps its date in All and counts in no operational view",
+  dateById["closed::renewal:2026-08-28"].closed === true
+  && DATE_FILTERS.all(dateById["closed::renewal:2026-08-28"])
+  && !DATE_FILTERS.obliging(dateById["closed::renewal:2026-08-28"])
+  && !DATE_FILTERS.overdue(dateById["closed::renewal:2026-08-28"]));
+
+check("T152 a failed analysis is marked as a failure, never as no action",
+  dateById["failed::deadline:2026-10-01"].analysisError === true
+  && /chip\.textContent = "analysis failed"/u.test(datesSource)
+  // The phrase appears once, in the header comment that forbids it. It must never be a
+  // value the screen writes.
+  && (datesSource.match(/No Action/giu) || []).length === 1
+  && !/textContent = "No Action"/iu.test(datesSource));
+
+check("T153 the four tabs are four filters over one array, so counts and lists agree",
+  dateCounts.all === dateRows.length
+  && dateCounts.obliging === dateRows.filter(DATE_FILTERS.obliging).length
+  && dateCounts.optional === dateRows.filter(DATE_FILTERS.optional).length
+  && dateCounts.overdue === dateRows.filter(DATE_FILTERS.overdue).length
+  && dateCounts.obliging === 3 && dateCounts.optional === 1 && dateCounts.overdue === 1,
+  JSON.stringify(dateCounts));
+
+check("T154 a row is addressed by record and finding, never by position",
+  dateRows.every((row) => row.id === `${row.recordId}::${row.findingId}`)
+  && /\$\{record\.id\}::\$\{finding\.id/u.test(datesSource)
+  && /id: `\$\{finding\.type\}:\$\{finding\.date \|\| finding\.dateRaw \|\| "none"\}`/u.test(analyzerSource2));
+
+check("T155 Dates takes now as an argument and calls no messenger",
+  /export function deriveDates\(records, now\)/u.test(datesSource)
+  && !/Date\.now\(\)/u.test(datesSource.slice(0, datesSource.indexOf("---------------------------------------------------------------- rendering")))
+  && !/messenger\./u.test(datesSource)
+  && !/send\(/u.test(datesSource));
+
+// The rest of Review. Three queues are derivable from the records; two are backed by
+// runtime state the background owns. Uncertain reading is built from the Dates rows, so
+// the two screens address the same reading the same way and cannot drift apart.
+const REVIEW_NOW = Date.parse("2026-09-12T09:00:00");
+const REVIEW_RECORDS = [
+  {
+    id: "unsettled", status: "New", sender: "Zorgpolis", subject: "Wijziging",
+    needsVerification: ["deadline"],
+    typedFindings: [
+      { id: "deadline:2026-12-31", type: "deadline", temporalRole: "due_by", date: "2026-12-31", actionRequired: true, needsVerification: true, dateAlternatives: [], evidence: "voor 31-12" },
+      { id: "information:2027-01-01", type: "information", temporalRole: "effective_or_informational_date", date: "2027-01-01", actionRequired: false, needsVerification: false, dateAlternatives: [], evidence: "per 1 januari" }
+    ]
+  },
+  { id: "broken", status: "New", sender: "Onbekend", subject: "Onleesbaar", analysisError: true },
+  { id: "gone", status: "New", sender: "Verdwenen", subject: "Weg", messageAvailable: false },
+  { id: "flagged", status: "Waiting", sender: "Stroomnet", subject: "Jaarafrekening", markedIncorrect: true },
+  { id: "closed-broken", status: "Completed", sender: "Oud", subject: "Afgesloten", analysisError: true }
+];
+const REVIEW_STATE = {
+  rejections: [{ key: "unsettled::deadline:2026-12-31", recordId: "unsettled", findingId: "deadline:2026-12-31", rejectedAt: "2026-09-12T08:00:00.000Z" }],
+  rules: [
+    { id: "local-rules-0.8.0", label: "Local rules 0.8.0", recordCount: 5, firstSeenAt: "2026-09-04T13:55:00.000Z", acknowledged: false },
+    { id: "local-rules-0.7.2", label: "Local rules 0.7.2", recordCount: 1, firstSeenAt: "2026-08-30T10:12:00.000Z", acknowledged: true }
+  ]
+};
+
+const uncertainOpen = deriveUncertain(REVIEW_RECORDS, REVIEW_NOW, new Set());
+check("T156 Uncertain reading is the Dates rows that are unsettled, addressed identically",
+  uncertainOpen.length === 1
+  && uncertainOpen[0].key === "unsettled::deadline:2026-12-31"
+  && uncertainOpen[0].recordId === "unsettled"
+  && uncertainOpen[0].findingId === "deadline:2026-12-31"
+  && deriveDates(REVIEW_RECORDS, REVIEW_NOW).some((row) => row.id === uncertainOpen[0].key && row.unsettled),
+  uncertainOpen.map((item) => item.key).join(" "));
+
+check("T157 a rejected reading leaves Uncertain and is kept, not deleted",
+  deriveUncertain(REVIEW_RECORDS, REVIEW_NOW, new Set(["unsettled::deadline:2026-12-31"])).length === 0
+  && deriveRejected(REVIEW_RECORDS, REVIEW_STATE).length === 1
+  && deriveRejected(REVIEW_RECORDS, REVIEW_STATE)[0].findingId === "deadline:2026-12-31");
+
+check("T158 a rejection whose record is gone is still shown, so it is never silently undone",
+  deriveRejected([], REVIEW_STATE)[0].present === false
+  && /never silently undone|no longer held/u.test(reviewSource));
+
+const unreadable = deriveUnreadable(REVIEW_RECORDS);
+check("T159 Could not be read holds failures and missing originals, and no closed record",
+  unreadable.length === 2
+  && unreadable.some((item) => item.recordId === "broken")
+  && unreadable.some((item) => item.recordId === "gone")
+  && !unreadable.some((item) => item.recordId === "closed-broken"),
+  unreadable.map((item) => item.recordId).join(" "));
+
+check("T160 Marked incorrect is a record of what you said, not a queue of work",
+  deriveMarkedIncorrect(REVIEW_RECORDS).length === 1
+  && deriveMarkedIncorrect(REVIEW_RECORDS)[0].recordId === "flagged"
+  && /not a queue of work/u.test(reviewSource));
+
+check("T161 Newly acting rule lists only what you have not acknowledged",
+  deriveNewRules(REVIEW_STATE).length === 1
+  && deriveNewRules(REVIEW_STATE)[0].id === "local-rules-0.8.0"
+  && deriveNewRules({ rules: [] }).length === 0);
+
+check("T162 the two state-backed queues are owned by the background and only read here",
+  /type === "getReviewState"/u.test(bg)
+  && /type === "setReviewRejection"/u.test(bg)
+  && /type === "acknowledgeRule"/u.test(bg)
+  && /reviewRejections/u.test(bg)
+  && /acknowledgedRules/u.test(bg)
+  && /deepFreeze\(response\.review\)/u.test(actionCenter)
+  && /dispatchEvent\(new CustomEvent\("civion:review-command"/u.test(reviewSource)
+  && !/messenger\./u.test(reviewSource)
+  && !/send\(/u.test(reviewSource));
+
+check("T163 a rejection is keyed by record and finding, and kept outside the record",
+  /REVIEW_REJECTION_KEY = \(recordId, findingId\)/u.test(bg)
+  && /metadata\.reviewRejections/u.test(bg)
+  && !/record\.reviewRejections/u.test(bg));
+
+check("T128 the manifest opens the r005 shell",
+  manifest.options_ui.page === "action-center/index.r005.html");
+
+// The shell must not grow a second copy of the record logic. It routes and it themes.
+
+check("T124 the shell owns navigation only — no record state, no messenger calls",
+  !/messenger\./u.test(shellSource) && !/records/u.test(shellSource.replace(/data-screen="records"|go\("records"\)|"records"/gu, "")));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

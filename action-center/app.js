@@ -200,6 +200,7 @@ function cacheElements() {
     "historicalProgress", "historicalStatus", "historicalProcessed", "historicalAnalyzed", "historicalSkipped", "historicalFailed", "historicalJunkAdmitted", "historicalJunkNotAdmitted", "historicalCurrentFolder", "historicalProgressNote",
     "historicalCancelButton", "historicalStartButton",
     "archiveExistingButton", "archiveExistingDialog", "archiveExistingScope", "archiveExistingProgress", "archiveExistingStatus",
+    "archiveExistingDateFrom", "archiveExistingDateTo", "archiveExistingMaxMessages",
     "archiveExistingExamined", "archiveExistingPdfMessages", "archiveExistingRecognized", "archiveExistingArchived", "archiveExistingAlready",
     "archiveExistingSkipped", "archiveExistingPending", "archiveExistingFailed", "archiveExistingCurrentFolder", "archiveExistingNote",
     "archiveExistingCancelButton", "archiveExistingStartButton", "recordContextMenu", "toast"
@@ -222,6 +223,13 @@ function showToast(message, isError = false) {
   toastTimer = setTimeout(() => {
     elements.toast.hidden = true;
   }, 3600);
+}
+
+// An Operations menu item is a label plus the note that says what the operation does.
+// Writing textContent on the button itself deletes both and leaves a bare word for the
+// rest of the session, so state changes are written into the label alone.
+function menuItemLabel(button) {
+  return button.querySelector(".lbl, .menu-item-label") || button;
 }
 
 function clearNode(node) {
@@ -266,14 +274,14 @@ function contextMenuButton(label, action, options = {}) {
 
 function contextSubmenu(label, entries) {
   const wrapper = document.createElement("div");
-  wrapper.className = "context-submenu";
+  wrapper.className = "context-submenu sub";
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "context-menu-item context-submenu-trigger";
   trigger.textContent = label;
   trigger.setAttribute("aria-haspopup", "menu");
   const panel = document.createElement("div");
-  panel.className = "context-submenu-panel";
+  panel.className = "context-submenu-panel subpanel";
   panel.setAttribute("role", "menu");
   for (const entry of entries) panel.append(contextMenuButton(entry.label, entry.action, entry));
   wrapper.append(trigger, panel);
@@ -282,7 +290,7 @@ function contextSubmenu(label, entries) {
 
 function contextDivider() {
   const divider = document.createElement("div");
-  divider.className = "context-menu-divider";
+  divider.className = "context-menu-divider sep";
   divider.setAttribute("role", "separator");
   return divider;
 }
@@ -964,9 +972,26 @@ function renderStats() {
   elements.statNew.textContent = String(active.filter(QUICK_FILTERS.new.match).length);
 }
 
+// Every chip carries the r005 base class as well as the 0.8.1 one it was built with, so
+// the same call renders correctly under either stylesheet while the port is in progress.
+const CHIP_TONE = {
+  "blocked-category-chip": "alert",
+  "warning-error": "alert",
+  "warning-warn": "suggested",
+  "priority-critical": "alert",
+  "priority-high": "alert",
+  "priority-medium": "suggested",
+  "priority-low": "neutral",
+  "priority-none": "neutral"
+};
+
 function createChip(label, className) {
   const chip = document.createElement("span");
-  chip.className = className;
+  const parts = String(className || "").split(/\s+/u).filter(Boolean);
+  const tone = parts.map((part) => CHIP_TONE[part]).find(Boolean) || "neutral";
+  if (!parts.includes("chip")) parts.push("chip");
+  parts.push(tone);
+  chip.className = parts.join(" ");
   chip.textContent = label;
   return chip;
 }
@@ -983,7 +1008,7 @@ function renderRows() {
     if (record.risk?.hardBlock === true) row.dataset.blocked = "true";
 
     const deadlineCell = document.createElement("td");
-    deadlineCell.className = "deadline-cell";
+    deadlineCell.className = "deadline-cell num";
     const appendDeadline = (main, note) => {
       const dateLine = document.createElement("span");
       dateLine.className = "deadline-date";
@@ -991,7 +1016,7 @@ function renderRows() {
       deadlineCell.append(dateLine);
       if (note) {
         const noteLine = document.createElement("small");
-        noteLine.className = "deadline-note";
+        noteLine.className = "deadline-note sub-line";
         noteLine.textContent = note;
         deadlineCell.append(noteLine);
       }
@@ -1014,7 +1039,7 @@ function renderRows() {
     }
 
     const receivedCell = document.createElement("td");
-    receivedCell.className = "received-cell";
+    receivedCell.className = "received-cell num";
     const receivedDate = new Date(record.receivedAt || 0);
     if (Number.isNaN(receivedDate.getTime())) {
       receivedCell.textContent = "—";
@@ -1024,7 +1049,7 @@ function renderRows() {
       dateLine.className = "received-date";
       dateLine.textContent = new Intl.DateTimeFormat("bg-BG", { day: "2-digit", month: "2-digit", year: "numeric" }).format(receivedDate);
       const timeLine = document.createElement("small");
-      timeLine.className = "received-time";
+      timeLine.className = "received-time sub-line";
       timeLine.textContent = new Intl.DateTimeFormat("bg-BG", { hour: "2-digit", minute: "2-digit" }).format(receivedDate);
       receivedCell.append(dateLine, timeLine);
     }
@@ -1039,26 +1064,26 @@ function renderRows() {
     const senderDisplayName = (bracketMatch ? bracketMatch[1] : senderValue).replace(/^["']+|["']+$/gu, "").trim();
     const senderAddress = bracketMatch ? bracketMatch[2].trim() : "";
     const senderName = document.createElement("span");
-    senderName.className = "sender-name";
+    senderName.className = "sender-name wrap-name";
     senderName.textContent = senderDisplayName || senderAddress || "Unknown sender";
     senderName.title = senderValue;
     senderCell.append(senderName);
     if (senderAddress && senderAddress !== senderName.textContent) {
       const addressLine = document.createElement("small");
-      addressLine.className = "sender-address";
+      addressLine.className = "sender-address sub-line";
       addressLine.textContent = senderAddress;
       addressLine.title = senderAddress;
       senderCell.append(addressLine);
     }
     const senderSource = document.createElement("small");
-    senderSource.className = "source-meta";
+    senderSource.className = "source-meta sub-line";
     senderSource.textContent = sourceText(record);
     senderCell.append(senderSource);
 
     const subjectCell = document.createElement("td");
     const subjectButton = document.createElement("button");
     subjectButton.type = "button";
-    subjectButton.className = "subject-button";
+    subjectButton.className = "subject-button wrap-name";
     subjectButton.textContent = record.subject || "(No subject)";
     subjectButton.title = "Open detailed analysis";
     subjectButton.addEventListener("click", (event) => {
@@ -1069,7 +1094,7 @@ function renderRows() {
     const warnings = recordWarnings(record);
     if (warnings.length) {
       const flags = document.createElement("div");
-      flags.className = "row-flags";
+      flags.className = "row-flags hchips";
       for (const warning of warnings) {
         flags.append(createChip(warning.label, `warning-chip warning-${warning.kind}`));
       }
@@ -1079,12 +1104,13 @@ function renderRows() {
     const actionCell = document.createElement("td");
     actionCell.className = "action-cell";
     const actionText = document.createElement("span");
-    actionText.className = "action-text";
+    actionText.className = "action-text wrap-name";
     actionText.textContent = record.requiredAction || record.summary || "—";
     actionText.title = record.requiredAction || record.summary || "";
     actionCell.append(actionText);
 
     const categoriesCell = document.createElement("td");
+    categoriesCell.className = "cats";
     if (record.risk?.hardBlock === true) categoriesCell.append(createChip("Blocked", "category-chip blocked-category-chip"));
     for (const categoryName of record.categories || ["Unknown"]) {
       categoriesCell.append(createChip(displayCategory(categoryName), "category-chip"));
@@ -1118,7 +1144,7 @@ function renderRows() {
     statusCell.append(statusSelect);
 
     row.tabIndex = 0;
-    row.className = "record-row";
+    row.className = "record-row pick";
     row.setAttribute("aria-label", `Open detailed analysis for ${record.subject || "message"}`);
     row.addEventListener("click", (event) => {
       if (event.target.closest("button, select, input, a")) return;
@@ -1232,7 +1258,7 @@ function renderFilterChips() {
   clearNode(elements.filterChips);
   for (const chip of chips) {
     const node = document.createElement("span");
-    node.className = "filter-chip";
+    node.className = "filter-chip fchip";
     const key = document.createElement("span");
     key.className = "chip-key";
     key.textContent = chip.key;
@@ -1379,9 +1405,120 @@ function showAllRetainedRecords() {
   renderRows();
 }
 
+// Identity state is owned by the background. This is the bridge and the only place that
+// asks for it: the snapshot is frozen before it is published, so a screen that tries to
+// keep or edit its own copy of the sender lists fails loudly instead of drifting.
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) deepFreeze(nested);
+  }
+  return value;
+}
+
+async function publishIdentityState() {
+  try {
+    const response = await send("getIdentityState");
+    document.dispatchEvent(new CustomEvent("civion:identity-state", {
+      detail: deepFreeze(response.identity)
+    }));
+  } catch (error) {
+    // A screen keeps the snapshot it already has rather than showing a half-empty one.
+    showToast(`Identity state could not be read: ${error.message}`, true);
+  }
+}
+
+// Review's two state-backed queues: a reading you rejected, and a rule that has only just
+// started acting. Both are runtime facts rather than message facts, so they arrive the
+// same way — read-only, frozen, owned by the background.
+async function publishReviewState() {
+  try {
+    const response = await send("getReviewState");
+    document.dispatchEvent(new CustomEvent("civion:review-state", {
+      detail: deepFreeze(response.review)
+    }));
+  } catch (error) {
+    showToast(`Review state could not be read: ${error.message}`, true);
+  }
+}
+
+// A view asks; the background decides; the next snapshot is what the view shows.
+document.addEventListener("civion:review-command", (event) => {
+  const detail = event.detail || {};
+  void (async () => {
+    try {
+      if (detail.type === "reject-finding" || detail.type === "restore-finding") {
+        await send("setReviewRejection", {
+          recordId: detail.recordId,
+          findingId: detail.findingId,
+          rejected: detail.type === "reject-finding",
+          reason: detail.reason || ""
+        });
+        showToast(detail.type === "reject-finding"
+          ? "The reading is marked as rejected. It stays visible and is not treated as operational."
+          : "The reading is no longer rejected.");
+      } else if (detail.type === "acknowledge-rule") {
+        await send("acknowledgeRule", { ruleId: detail.ruleId });
+        showToast("Rule acknowledged.");
+      } else {
+        return;
+      }
+      await loadState(false);
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  })();
+});
+
+// Junk admission is its own read-only contract, not part of identity: identity is about
+// domains the person decided on, this is about what the gate did to individual messages.
+async function publishJunkAdmissionState() {
+  try {
+    const response = await send("getJunkAdmissionState");
+    document.dispatchEvent(new CustomEvent("civion:junk-admission-state", {
+      detail: deepFreeze(response.junk)
+    }));
+  } catch (error) {
+    showToast(`Junk admission state could not be read: ${error.message}`, true);
+  }
+}
+
+// A view asks for a change; it never performs one. The background decides and the next
+// snapshot is what the view sees, so Trust and Review cannot disagree with the runtime.
+document.addEventListener("civion:identity-command", (event) => {
+  const { domain, disposition } = event.detail || {};
+  void (async () => {
+    try {
+      await send("setDomainDisposition", { domain, disposition });
+      await loadState(false);
+      showToast(disposition === "clear"
+        ? `Cleared the disposition for ${domain}.`
+        : `${domain} is now ${disposition === "allow" ? "allowlisted" : "blocked"}.`);
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  })();
+});
+
+// The derived screens read the record set; they do not own it and never write it back.
+// One event after every render is the whole contract between app.js and them, so a view
+// can be added or removed without app.js knowing anything about it.
+function publishState() {
+  document.dispatchEvent(new CustomEvent("civion:state", {
+    detail: {
+      records: state.records,
+      accountLabels: state.accountLabels,
+      metadata: state.metadata,
+      settings: state.settings,
+      version: state.version
+    }
+  }));
+}
+
 function render() {
   renderStats();
   renderRows();
+  publishState();
   elements.versionLabel.textContent = `v${state.version}`;
   const runtimeActive = state.listenerState.newMail === true;
   elements.runtimePill.textContent = runtimeActive ? "ACTIVE" : "ERROR";
@@ -1396,10 +1533,10 @@ function render() {
   const scanRunning = state.historicalScan?.status === "running";
   const archiveRunning = state.archiveExisting?.status === "running";
   elements.historicalScanButton.dataset.status = scanRunning ? "running" : "idle";
-  elements.historicalScanButton.textContent = scanRunning ? "Historical Scan · running" : "Historical Scan";
+  menuItemLabel(elements.historicalScanButton).textContent = scanRunning ? "Historical Scan · running" : "Historical Scan";
   elements.historicalScanButton.disabled = archiveRunning;
   elements.archiveExistingButton.dataset.status = archiveRunning ? "running" : "idle";
-  elements.archiveExistingButton.textContent = archiveRunning ? "Archive PDFs · running" : "Archive existing PDFs";
+  menuItemLabel(elements.archiveExistingButton).textContent = archiveRunning ? "Archive PDFs · running" : "Archive existing PDFs";
   elements.archiveExistingButton.disabled = scanRunning;
 
   const storagePressure = state.metadata.storagePressure === true;
@@ -1452,6 +1589,12 @@ async function loadState(reconfigure = true) {
   state.version = response.version || "0.1.15";
   if (reconfigure) configureControls();
   render();
+  // Every refresh republishes the two read-only snapshots too, so a change to the allow or
+  // block list, or a newly admitted junk message, reaches Trust and Review on the same tick
+  // as the records, without a reload.
+  void publishIdentityState();
+  void publishJunkAdmissionState();
+  void publishReviewState();
 }
 
 function selectedRecord() {
@@ -1464,7 +1607,7 @@ function fillList(list, values, emptyText = "None") {
   if (!normalized.length) {
     const item = document.createElement("li");
     item.textContent = emptyText;
-    item.className = "muted";
+    item.className = "muted dim";
     list.append(item);
     return;
   }
@@ -1693,7 +1836,7 @@ function renderHistoricalScope(accounts) {
   clearNode(elements.historicalScope);
   if (!accounts.length) {
     const empty = document.createElement("p");
-    empty.className = "muted";
+    empty.className = "muted dim";
     empty.textContent = "No Thunderbird accounts or folders were found.";
     elements.historicalScope.append(empty);
     return;
@@ -1702,7 +1845,7 @@ function renderHistoricalScope(accounts) {
     const section = document.createElement("section");
     section.className = "historical-account";
     const heading = document.createElement("div");
-    heading.className = "historical-account-heading";
+    heading.className = "historical-account-heading acct";
     const label = document.createElement("label");
     label.className = "check-line";
     const accountToggle = document.createElement("input");
@@ -1712,7 +1855,7 @@ function renderHistoricalScope(accounts) {
     name.textContent = `${account.name} · ${account.type}`;
     label.append(accountToggle, name);
     const count = document.createElement("span");
-    count.className = "muted";
+    count.className = "muted dim";
     count.textContent = `${account.folders.length} folders`;
     heading.append(label, count);
 
@@ -1731,7 +1874,7 @@ function renderHistoricalScope(accounts) {
       text.textContent = folder.path || folder.name;
       if (Array.isArray(folder.specialUse) && folder.specialUse.length) {
         const special = document.createElement("small");
-        special.className = "historical-special-use";
+        special.className = "historical-special-use tag";
         special.textContent = ` · ${folder.specialUse.join(", ")}`;
         text.append(special);
       }
@@ -1779,12 +1922,12 @@ function renderHistoricalScanState(scan = state.historicalScan) {
   elements.historicalStartButton.disabled = running;
   elements.historicalCancelButton.disabled = !running;
   elements.historicalScanButton.dataset.status = running ? "running" : "idle";
-  elements.historicalScanButton.textContent = running ? "Historical Scan · running" : "Historical Scan";
+  menuItemLabel(elements.historicalScanButton).textContent = running ? "Historical Scan · running" : "Historical Scan";
 
   let note = "Historical Scan has not started.";
   if (running) {
-    const limit = current.limit ? ` of maximum ${current.limit}` : " with no limit";
-    note = `Processed ${current.processed ?? 0}${limit}. You can close this window; the scan will continue while Thunderbird is running.`;
+    const limit = current.limit ? ` of at most ${current.limit}` : "";
+    note = `Processed ${current.processed ?? 0}${limit}. You can leave this view; the scan continues while Thunderbird is running.`;
   } else if (current.status === "completed") {
     const junkNote = (current.junkAdmitted ?? 0) || (current.junkNotAdmitted ?? 0)
       ? ` In Junk folders, ${current.junkAdmitted ?? 0} messages met the admission gate and ${current.junkNotAdmitted ?? 0} were left unanalyzed — not analyzed is not a spam verdict.`
@@ -1821,20 +1964,48 @@ function startHistoricalPolling() {
   }, 900);
 }
 
-async function openHistoricalScan() {
+// Loading is separate from opening, because the panel can now be reached two ways: the
+// Operations menu, and navigating straight to System → Historical Scan. The shell fires a
+// show event on arrival; the guard keeps the two routes from fetching the scope twice.
+let historicalPanelLoading = false;
+
+async function loadHistoricalScanPanel() {
+  if (historicalPanelLoading) return;
+  historicalPanelLoading = true;
   elements.historicalScanButton.disabled = true;
   try {
     const response = await send("getHistoricalScanScope");
     state.historicalScope = Array.isArray(response.accounts) ? response.accounts : [];
     renderHistoricalScope(state.historicalScope);
     renderHistoricalScanState(response.scan);
-    elements.historicalScanDialog.showModal();
     if (response.scan?.status === "running") startHistoricalPolling();
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    historicalPanelLoading = false;
     elements.historicalScanButton.disabled = false;
   }
+}
+
+async function openHistoricalScan() {
+  elements.historicalScanDialog.showModal();
+  await loadHistoricalScanPanel();
+}
+
+// Mirrors the resolution the background does, so the confirmation names the same window
+// the run will use. Empty dates are the last twelve months; there is no whole-mailbox
+// option any more (decision r001 section 3).
+const HISTORICAL_DEFAULT_WINDOW_MONTHS = 12;
+
+function resolvedHistoricalWindow(rawFrom, rawTo) {
+  const iso = (date) => date.toISOString().slice(0, 10);
+  if (!rawFrom && !rawTo) {
+    const to = new Date();
+    const from = new Date(to.getTime());
+    from.setMonth(from.getMonth() - HISTORICAL_DEFAULT_WINDOW_MONTHS);
+    return { from: iso(from), to: iso(to) };
+  }
+  return { from: rawFrom || "the oldest message", to: rawTo || "today" };
 }
 
 async function startHistoricalScan() {
@@ -1844,12 +2015,15 @@ async function startHistoricalScan() {
     return;
   }
   const maxMessages = Number(elements.historicalMaxMessages.value);
-  if (!Number.isFinite(maxMessages) || maxMessages < 0 || maxMessages > 50000) {
-    showToast("Maximum messages must be between 0 and 50000.", true);
+  if (!Number.isFinite(maxMessages) || maxMessages < 1 || maxMessages > 20000) {
+    showToast("Maximum messages must be between 1 and 20000.", true);
     return;
   }
-  const scopeText = maxMessages === 0 ? "no limit" : `up to ${Math.trunc(maxMessages)} messages`;
-  if (!window.confirm(`Start Historical Scan for ${folderIds.length} selected folders (${scopeText})? Full message text will not be stored.`)) return;
+  // The dialog states the bound it is about to run under, resolved dates included, so
+  // nothing about the run is left implicit at the moment it starts.
+  const window12 = resolvedHistoricalWindow(elements.historicalDateFrom.value, elements.historicalDateTo.value);
+  const scopeText = `at most ${Math.trunc(maxMessages)} messages between ${window12.from} and ${window12.to}`;
+  if (!window.confirm(`Start Historical Scan for ${folderIds.length} selected folders — ${scopeText}? Full message text will not be stored.`)) return;
   elements.historicalStartButton.disabled = true;
   try {
     const response = await send("startHistoricalScan", {
@@ -1918,14 +2092,15 @@ function renderArchiveExistingState(archive = state.archiveExisting) {
     ? "Continue safely"
     : current.status === "completed" ? "Scan again" : "Start archive";
   elements.archiveExistingButton.dataset.status = running ? "running" : "idle";
-  elements.archiveExistingButton.textContent = running ? "Archive PDFs · running" : "Archive existing PDFs";
+  menuItemLabel(elements.archiveExistingButton).textContent = running ? "Archive PDFs · running" : "Archive existing PDFs";
   elements.historicalScanButton.disabled = running;
 
   let note = "Existing-document archive has not started.";
   if (running) {
-    note = `Examined ${current.examined ?? 0} messages. You can close this window; archiving continues while Thunderbird is running.`;
+    const limit = current.limit ? ` of at most ${current.limit}` : "";
+    note = `Examined ${current.examined ?? 0}${limit} messages. You can leave this view; archiving continues while Thunderbird is running.`;
   } else if (current.status === "completed") {
-    note = `Done: ${current.archived ?? 0} newly archived, ${current.alreadyArchived ?? 0} already archived or duplicate, ${current.pending ?? 0} pending, ${current.failed ?? 0} errors.`;
+    note = `Done: ${current.archived ?? 0} newly archived, ${current.alreadyArchived ?? 0} already archived or duplicate, ${current.pending ?? 0} pending, ${current.failed ?? 0} errors.${current.limitReached ? " The configured limit was reached." : ""}`;
   } else if (current.status === "cancelled") {
     note = `Stopped after ${current.examined ?? 0} messages. Continue is safe; existing hashes prevent duplicate files.`;
   } else if (current.status === "interrupted") {
@@ -1959,23 +2134,32 @@ function startArchiveExistingPolling() {
   }, 900);
 }
 
-async function openArchiveExisting() {
+let archivePanelLoading = false;
+
+async function loadArchiveExistingPanel() {
+  if (archivePanelLoading) return;
+  archivePanelLoading = true;
   elements.archiveExistingButton.disabled = true;
   try {
     const response = await send("getArchiveExistingScope");
     state.archiveExistingScope = response.scope || null;
     setText(
       elements.archiveExistingScope,
-      `${response.scope?.folderCount ?? 0} normal folders across ${response.scope?.accountCount ?? 0} mail accounts. No date or message limit.`
+      `${response.scope?.folderCount ?? 0} normal folders across ${response.scope?.accountCount ?? 0} mail accounts. The folder scope is fixed; the date window and the message ceiling are set below.`
     );
     renderArchiveExistingState(response.archive);
-    elements.archiveExistingDialog.showModal();
     if (response.archive?.status === "running") startArchiveExistingPolling();
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    archivePanelLoading = false;
     elements.archiveExistingButton.disabled = state.historicalScan?.status === "running";
   }
+}
+
+async function openArchiveExisting() {
+  elements.archiveExistingDialog.showModal();
+  await loadArchiveExistingPanel();
 }
 
 async function startArchiveExisting() {
@@ -1984,11 +2168,26 @@ async function startArchiveExisting() {
     showToast("No normal mail folders are available.", true);
     return;
   }
-  const message = `Archive recognized PDF documents from all ${scope.folderCount} normal folders in ${scope.accountCount} mail accounts? Trash, Junk, Sent, Drafts, Templates and Outbox are excluded. Files are stored only in F:\\01_ARCHIVE\\CIVION.`;
+  const maxMessages = Number(elements.archiveExistingMaxMessages.value);
+  if (!Number.isFinite(maxMessages) || maxMessages < 1 || maxMessages > 20000) {
+    showToast("Maximum messages must be between 1 and 20000.", true);
+    return;
+  }
+  const bounds = resolvedHistoricalWindow(
+    elements.archiveExistingDateFrom.value,
+    elements.archiveExistingDateTo.value
+  );
+  const message = `Archive recognized PDF documents from all ${scope.folderCount} normal folders in ${scope.accountCount} mail accounts — at most ${Math.trunc(maxMessages)} messages examined, between ${bounds.from} and ${bounds.to}? Trash, Junk, Sent, Drafts, Templates and Outbox are excluded. Files are stored only in F:\\01_ARCHIVE\\CIVION.`;
   if (!window.confirm(message)) return;
   elements.archiveExistingStartButton.disabled = true;
   try {
-    const response = await send("startArchiveExisting");
+    const response = await send("startArchiveExisting", {
+      config: {
+        dateFrom: elements.archiveExistingDateFrom.value,
+        dateTo: elements.archiveExistingDateTo.value,
+        maxMessages: Math.trunc(maxMessages)
+      }
+    });
     renderArchiveExistingState(response.archive);
     startArchiveExistingPolling();
     showToast("Existing-document archive started.");
@@ -2140,7 +2339,7 @@ function renderDiagnostics(report) {
   const authservCandidates = Array.isArray(current.authservCandidates) ? current.authservCandidates : [];
   if (!authservCandidates.length) {
     const emptyAuthserv = document.createElement("p");
-    emptyAuthserv.className = "muted";
+    emptyAuthserv.className = "muted dim";
     emptyAuthserv.textContent = "No identifiers have been observed yet — they are collected while analyzing new messages.";
     elements.diagnosticsAuthserv.append(emptyAuthserv);
   } else {
@@ -2150,7 +2349,7 @@ function renderDiagnostics(report) {
       const idSpan = document.createElement("code");
       idSpan.textContent = candidate.id;
       const countSpan = document.createElement("span");
-      countSpan.className = "muted";
+      countSpan.className = "muted dim";
       countSpan.textContent = `${candidate.count} messages`;
       line.append(idSpan, countSpan);
       elements.diagnosticsAuthserv.append(line);
@@ -2161,15 +2360,15 @@ function renderDiagnostics(report) {
   const checks = Array.isArray(current.checks) ? current.checks : [];
   if (!checks.length) {
     const empty = document.createElement("p");
-    empty.className = "muted";
+    empty.className = "muted dim";
     empty.textContent = "No checks are available.";
     elements.diagnosticsChecks.append(empty);
   } else {
     for (const item of checks) {
       const row = document.createElement("div");
-      row.className = `diagnostics-check diagnostics-check-${item.status || "unknown"}`;
+      row.className = `diagnostics-check diagnostics-check-${item.status || "unknown"} ${{ pass: "pass", warn: "warn", fail: "fail" }[item.status] || "skip"}`;
       const badge = document.createElement("span");
-      badge.className = "diagnostics-check-badge";
+      badge.className = "diagnostics-check-badge mk";
       badge.textContent = diagnosticStatusLabel(item.status);
       const body = document.createElement("div");
       const title = document.createElement("strong");
@@ -2188,7 +2387,7 @@ function renderDiagnostics(report) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 7;
-    cell.className = "muted";
+    cell.className = "muted dim";
     cell.textContent = "No accounts were found or the check was not run.";
     row.append(cell);
     elements.diagnosticsAccountsBody.append(row);
@@ -2226,7 +2425,11 @@ function renderDiagnostics(report) {
   setText(elements.diagMigrationStatus, storage.migration?.status || recovery.status || "clean");
 }
 
+let diagnosticsRunning = false;
+
 async function runDiagnostics() {
+  if (diagnosticsRunning) return;
+  diagnosticsRunning = true;
   elements.runSelfCheckButton.disabled = true;
   try {
     const response = await send("runSelfCheck");
@@ -2235,6 +2438,7 @@ async function runDiagnostics() {
   } catch (error) {
     showToast(error.message, true);
   } finally {
+    diagnosticsRunning = false;
     elements.runSelfCheckButton.disabled = false;
   }
 }
@@ -2419,6 +2623,11 @@ function bindEvents() {
   elements.historicalScanDialog.addEventListener("close", () => {
     if (state.historicalScan?.status !== "running") stopHistoricalPolling();
   });
+  // Reaching a panel by navigation rather than through the Operations menu has to load
+  // the same data. The shell fires "show" when a former dialog becomes visible.
+  elements.historicalScanDialog.addEventListener("show", () => { void loadHistoricalScanPanel(); });
+  elements.archiveExistingDialog.addEventListener("show", () => { void loadArchiveExistingPanel(); });
+  elements.diagnosticsDialog.addEventListener("show", () => { void runDiagnostics(); });
 
   elements.archiveExistingButton.addEventListener("click", () => { void openArchiveExisting(); });
   elements.archiveExistingStartButton.addEventListener("click", () => { void startArchiveExisting(); });

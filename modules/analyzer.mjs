@@ -1697,9 +1697,19 @@ function buildTypedFindings({ expressions, deadline, financialContext, paymentDe
     });
   }
 
+  // The dedupe key is content-derived, so it is also a stable identity for the finding:
+  // the same message re-analysed produces the same ids, and a screen can address one
+  // finding without relying on its position in the array. Dates is built on it.
   const seen = new Set();
   return findings
     .sort((a, b) => a.index - b.index)
+    .map((finding) => ({
+      ...finding,
+      id: `${finding.type}:${finding.date || finding.dateRaw || "none"}`
+        .toLowerCase()
+        .replace(/[^a-z0-9:_-]+/gu, "-")
+        .slice(0, 120)
+    }))
     .filter((finding) => {
       const key = `${finding.type}:${finding.date || finding.dateRaw || "none"}`;
       if (seen.has(key)) return false;

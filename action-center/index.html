@@ -312,9 +312,9 @@
 <div class="form-row three-columns">
 <label><span>From date</span><input id="historicalDateFrom" type="date"/></label>
 <label><span>To date</span><input id="historicalDateTo" type="date"/></label>
-<label><span>Maximum messages</span><input id="historicalMaxMessages" max="50000" min="0" step="100" type="number" value="5000"/></label>
+<label><span>Maximum messages</span><input id="historicalMaxMessages" max="20000" min="1" step="100" type="number" value="2000"/></label>
 </div>
-<p class="setting-help">Leave the dates empty for the entire available period. A value of <strong>0</strong> for “Maximum messages” means no limit.</p>
+<p class="setting-help">Every run is bounded. Leave the dates empty and the run resolves to the last twelve months; the confirmation states the exact window and count before it starts. There is no value that means “no limit”.</p>
 <label class="check-line"><input id="historicalReanalyze" type="checkbox"/><span>Reanalyze existing records</span></label>
 <label class="check-line"><input id="historicalApplyTags" type="checkbox"/><span>Apply Thunderbird priority tags to historical messages</span></label>
 </section>
@@ -353,6 +353,14 @@
 </div>
 <section>
 <div class="section-heading-row"><div><h3>Fixed scope</h3><p class="muted" id="archiveExistingScope">Reading available accounts and folders…</p></div></div>
+</section>
+<section class="historical-options">
+<div class="form-row three-columns">
+<label><span>From date</span><input id="archiveExistingDateFrom" type="date"/></label>
+<label><span>To date</span><input id="archiveExistingDateTo" type="date"/></label>
+<label><span>Maximum messages examined</span><input id="archiveExistingMaxMessages" max="20000" min="1" step="100" type="number" value="2000"/></label>
+</div>
+<p class="setting-help">The folder scope is fixed, but the run is bounded. Leave the dates empty and the run resolves to the last twelve months; the confirmation states the exact window and count before it starts. There is no value that means “no limit”.</p>
 </section>
 <section class="historical-progress" data-status="idle" id="archiveExistingProgress">
 <div class="section-heading-row"><h3>Progress</h3><strong id="archiveExistingStatus">Ready to start</strong></div>
