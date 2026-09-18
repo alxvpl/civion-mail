@@ -1,6 +1,7 @@
 import { buildCivionMailPackage } from "../modules/federation.mjs";
 import { availableSourceRecords, recordMatchesSourceFilter, sourceState } from "../modules/source-state.mjs";
 import { describeNarrowing, emptyResultText, narrowingText } from "../modules/view-filters.mjs";
+import { hydrateSettings as projectSettings, readSettingsPatch } from "./views-settings.mjs";
 const CLOSED_STATUSES = new Set(["Completed", "Dismissed"]);
 const URGENT_PRIORITIES = new Set(["Critical", "High"]);
 const PRIORITY_ORDER = new Map([
@@ -2209,36 +2210,29 @@ async function cancelArchiveExisting() {
   }
 }
 
+// The Settings controls are filled from state.settings in exactly one place, and that
+// place runs whenever the screen is reached — by the rail, by a shortcut from another
+// screen, or by the legacy showModal() path — because the shell fires "show" on every
+// arrival. Filling them only from the one button that used to open the dialog left every
+// other path showing the HTML defaults, which for the bridge and the archive are the
+// opposite of the stored values.
+function hydrateSettings() {
+  projectSettings(elements, state.settings);
+}
+
 function openSettings() {
-  elements.settingAutoTag.checked = state.settings.autoTag === true;
-  elements.settingAnalyzeJunk.checked = state.settings.analyzeJunk === true;
-  elements.settingDesktopBridge.checked = state.settings.desktopBridgeEnabled !== false;
-  elements.settingDocumentArchive.checked = state.settings.automaticDocumentArchive !== false;
-  elements.settingRetention.value = String(state.settings.retentionDays || 365);
-  elements.settingMaxRecords.value = String(state.settings.maxRecords || 2000);
-  elements.settingDiagnostics.checked = state.settings.diagnosticLogging === true;
-  elements.settingTrustedAuthserv.value = Array.isArray(state.settings.trustedAuthservIds)
-    ? state.settings.trustedAuthservIds.join(", ")
-    : "";
   elements.settingsDialog.showModal();
 }
 
 async function saveSettings() {
   elements.saveSettingsButton.disabled = true;
   try {
-    await send("setSettings", {
-      patch: {
-        autoTag: elements.settingAutoTag.checked,
-        analyzeJunk: elements.settingAnalyzeJunk.checked,
-        desktopBridgeEnabled: elements.settingDesktopBridge.checked,
-        automaticDocumentArchive: elements.settingDocumentArchive.checked,
-        retentionDays: Number(elements.settingRetention.value),
-        maxRecords: Number(elements.settingMaxRecords.value),
-        diagnosticLogging: elements.settingDiagnostics.checked,
-        trustedAuthservIds: elements.settingTrustedAuthserv.value
-      }
-    });
+    await send("setSettings", { patch: readSettingsPatch(elements) });
+    // Read back what the background actually stored, then leave; the next arrival
+    // hydrates from the same state, so the form cannot show what was typed rather
+    // than what was kept.
     await loadState(false);
+    hydrateSettings();
     elements.settingsDialog.close();
     showToast("Settings saved.");
   } catch (error) {
@@ -2643,6 +2637,7 @@ function bindEvents() {
   elements.resetAcceptanceButton.addEventListener("click", () => { void resetAcceptanceMetrics(); });
 
   elements.settingsButton.addEventListener("click", openSettings);
+  elements.settingsDialog.addEventListener("show", hydrateSettings);
   elements.saveSettingsButton.addEventListener("click", saveSettings);
   elements.saveDetailButton.addEventListener("click", saveDetail);
 
@@ -2756,6 +2751,7 @@ async function initialize() {
   bindEvents();
   try {
     await loadState(true);
+    hydrateSettings();
   } catch (error) {
     showToast(`CIVION Mail could not load data: ${error.message}`, true);
   }

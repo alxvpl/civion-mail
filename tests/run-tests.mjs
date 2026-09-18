@@ -1130,10 +1130,11 @@ check("T126 every chip carries the r005 base class and a tone",
 // A panel can be reached two ways now: the Operations menu, and navigating to it. Both
 // have to load the same data, so loading is separate from opening and the shell fires
 // "show" on arrival. Without this, System → Historical Scan showed an empty folder tree.
+// 0.8.4 added the fourth: Settings, which showed the HTML defaults on arrival.
 check("T127 panels load their data on arrival, not only when opened from the menu",
   /async function loadHistoricalScanPanel\(\)/u.test(actionCenter)
   && /async function loadArchiveExistingPanel\(\)/u.test(actionCenter)
-  && (actionCenter.match(/addEventListener\("show"/gu) || []).length === 3
+  && (actionCenter.match(/addEventListener\("show"/gu) || []).length === 4
   && /dispatchEvent\(new Event\("show"\)\)/u.test(shellSource));
 
 // The PDF sweep was the half of decision r001 section 3 that had not been done: fixed
@@ -1507,6 +1508,134 @@ check("T128 the manifest opens the r005 shell",
 
 check("T124 the shell owns navigation only — no record state, no messenger calls",
   !/messenger\./u.test(shellSource) && !/records/u.test(shellSource.replace(/data-screen="records"|go\("records"\)|"records"/gu, "")));
+
+// ---- 0.8.4: Settings shows the stored values on every path (029 §3.1, §5.1–10) ----
+//
+// The projection is executed, not grepped: the defect was a form that showed the HTML
+// defaults whenever Settings was reached by navigation, and the HTML defaults for the
+// bridge and the archive are the opposite of the stored ones. The controls below are
+// plain objects with the two properties the projection writes; the storage layer is the
+// real one, over an in-memory stand-in for messenger.storage.local.
+
+const { hydrateSettings, readSettingsPatch, SETTINGS_CONTROL_IDS } = await import("../action-center/views-settings.mjs");
+
+function memoryStorageArea(initial = {}) {
+  const store = { ...initial };
+  return {
+    store,
+    async get(keys) {
+      if (typeof keys === "string") return keys in store ? { [keys]: store[keys] } : {};
+      if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in store).map((key) => [key, store[key]]));
+      const out = {};
+      for (const [key, fallback] of Object.entries(keys || {})) out[key] = key in store ? store[key] : fallback;
+      return out;
+    },
+    async set(values) { Object.assign(store, values); },
+    async remove(keys) { for (const key of [].concat(keys)) delete store[key]; }
+  };
+}
+
+globalThis.messenger = { storage: { local: memoryStorageArea() } };
+const storage = await import("../modules/storage.mjs");
+
+// Fresh controls carry the HTML state: nothing checked, nothing typed. That is what a
+// person sees if no projection ever runs.
+const freshControls = () => Object.fromEntries(SETTINGS_CONTROL_IDS.map((id) => [id, { checked: false, value: "" }]));
+
+const cleanStoreSettings = (await storage.getState()).settings;
+const cleanControls = freshControls();
+hydrateSettings(cleanControls, cleanStoreSettings);
+
+check("T164 stored desktopBridgeEnabled=true is shown as enabled",
+  (() => { const c = freshControls(); hydrateSettings(c, { desktopBridgeEnabled: true }); return c.settingDesktopBridge.checked === true; })());
+
+check("T165 stored automaticDocumentArchive=true is shown as enabled",
+  (() => { const c = freshControls(); hydrateSettings(c, { automaticDocumentArchive: true }); return c.settingDocumentArchive.checked === true; })());
+
+check("T166 stored analyzeJunk=true is shown as enabled",
+  (() => { const c = freshControls(); hydrateSettings(c, { analyzeJunk: true }); return c.settingAnalyzeJunk.checked === true; })());
+
+// Save → reload → show, through the real setSettings/getState, for both directions of
+// the two settings whose HTML default disagrees with the stored default.
+async function saveAndReload(edit) {
+  const before = freshControls();
+  hydrateSettings(before, (await storage.getState()).settings);
+  edit(before);
+  await storage.setSettings(readSettingsPatch(before));
+  const after = freshControls();
+  hydrateSettings(after, (await storage.getState()).settings);
+  return after;
+}
+
+check("T167 Save false → reload → shown false, for the bridge and the archive",
+  await (async () => {
+    const c = await saveAndReload((x) => { x.settingDesktopBridge.checked = false; x.settingDocumentArchive.checked = false; });
+    return c.settingDesktopBridge.checked === false && c.settingDocumentArchive.checked === false;
+  })());
+
+check("T168 Save true → reload → shown true, for the bridge and the archive",
+  await (async () => {
+    const c = await saveAndReload((x) => { x.settingDesktopBridge.checked = true; x.settingDocumentArchive.checked = true; });
+    return c.settingDesktopBridge.checked === true && c.settingDocumentArchive.checked === true;
+  })());
+
+// Direct navigation and the legacy showModal() path converge on the same "show" event,
+// so there is one place that fills the form and openSettings() only navigates.
+check("T169 direct navigation and the legacy showModal() path fill the form the same way",
+  /elements\.settingsDialog\.addEventListener\("show", hydrateSettings\)/u.test(actionCenter)
+  && /function openSettings\(\) \{\s*elements\.settingsDialog\.showModal\(\);\s*\}/u.test(actionCenter)
+  && /function hydrateSettings\(\) \{\s*projectSettings\(elements, state\.settings\);\s*\}/u.test(actionCenter)
+  && !/elements\.settingDesktopBridge\.checked = /u.test(actionCenter)
+  && /show: \(\) => go\("settings"\)/u.test(shellSource)
+  && /dispatchEvent\(new Event\("show"\)\)/u.test(shellSource));
+
+check("T170 the remaining fields are projected: autoTag, retention, max records, diagnostics, authserv-ids",
+  (() => {
+    const c = freshControls();
+    hydrateSettings(c, { autoTag: true, retentionDays: 90, maxRecords: 500, diagnosticLogging: true, trustedAuthservIds: ["mx.a.invalid", "mx.b.invalid"] });
+    return c.settingAutoTag.checked === true && c.settingRetention.value === "90" && c.settingMaxRecords.value === "500"
+      && c.settingDiagnostics.checked === true && c.settingTrustedAuthserv.value === "mx.a.invalid, mx.b.invalid";
+  })());
+
+check("T171 Junk keeps its semantics: only the truth of the control changed",
+  /analyzeJunk: settings\.analyzeJunk === true/u.test(storageSource)
+  && (() => { const c = freshControls(); hydrateSettings(c, { analyzeJunk: false }); return c.settingAnalyzeJunk.checked === false; })()
+  && (() => { const c = freshControls(); hydrateSettings(c, {}); return c.settingAnalyzeJunk.checked === false; })());
+
+// Save leaves the screen (close() is go("records")) and a return in the same session is
+// an arrival, which hydrates. The read-back happens before leaving, from the background.
+check("T172 Save → leave → return in the same session shows the saved values",
+  /await send\("setSettings", \{ patch: readSettingsPatch\(elements\) \}\);[\s\S]*?await loadState\(false\);\s*hydrateSettings\(\);\s*elements\.settingsDialog\.close\(\);/u.test(actionCenter)
+  && /hide: \(\) => go\("records"\)/u.test(shellSource)
+  && await (async () => {
+    // The same sequence executed: what Save stored is what the next hydration shows.
+    const edited = freshControls();
+    hydrateSettings(edited, (await storage.getState()).settings);
+    edited.settingRetention.value = "120";
+    edited.settingAutoTag.checked = true;
+    await storage.setSettings(readSettingsPatch(edited));
+    const returned = freshControls();
+    hydrateSettings(returned, (await storage.getState()).settings);
+    return returned.settingRetention.value === "120" && returned.settingAutoTag.checked === true;
+  })());
+
+check("T173 a clean store shows the semantic defaults, not the empty HTML",
+  cleanControls.settingDesktopBridge.checked === true
+  && cleanControls.settingDocumentArchive.checked === true
+  && cleanControls.settingAnalyzeJunk.checked === false
+  && cleanControls.settingRetention.value === "365"
+  && cleanControls.settingMaxRecords.value === "2000"
+  // The forbidden fix: none of the three inputs carries checked= in the markup.
+  && !/id="settingDesktopBridge"[^>]*\schecked/u.test(markupR005)
+  && !/id="settingDocumentArchive"[^>]*\schecked/u.test(markupR005)
+  && !/id="settingAnalyzeJunk"[^>]*\schecked/u.test(markupR005));
+
+const settingsViewSource = readFileSync(new URL("../action-center/views-settings.mjs", import.meta.url), "utf8");
+check("T174 the projection keeps no second copy of the settings",
+  !/^(let|var) /mu.test(settingsViewSource)
+  && !/^const (?!\{)\w+ = (?!Object\.freeze)/mu.test(settingsViewSource.replace(/export const SETTINGS_CONTROL_IDS[\s\S]*?\]\);/u, ""))
+  && /hydrateSettings\(\) \{\s*projectSettings\(elements, state\.settings\)/u.test(actionCenter)
+  && !/settingsDraft|settingsCopy|state\.settingsForm/u.test(actionCenter));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
