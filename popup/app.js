@@ -18,7 +18,7 @@ async function openCenter() {
   try {
     await send({ type: "openActionCenter" });
   } catch {
-    await messenger.tabs.create({ url: messenger.runtime.getURL("action-center/index.html") });
+    await messenger.tabs.create({ url: messenger.runtime.getURL("action-center/index.r005.html") });
   }
 }
 
