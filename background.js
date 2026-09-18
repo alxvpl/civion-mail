@@ -51,7 +51,7 @@ import {
 const localRulesProvider = createLocalRulesProvider(analyzeMessage);
 
 const SPACE_NAME = "mail_sentinel_action_center";
-const ACTION_CENTER_PATH = "action-center/index.html";
+const ACTION_CENTER_PATH = "action-center/index.r005.html";
 const MENU_IDS = Object.freeze({
   openTools: "mail-sentinel-open-tools",
   analyzeTools: "mail-sentinel-analyze-tools",
