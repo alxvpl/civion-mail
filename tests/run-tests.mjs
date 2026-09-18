@@ -212,10 +212,12 @@ check("T25 the third button weight is defined and uses existing tokens only",
   && !/#[0-9a-f]{3,6}/iu.test(styles.slice(styles.indexOf(".quiet-button {"), styles.indexOf(".topbar-divider"))));
 
 // cacheElements() throws on the first missing id and takes the whole panel down with it,
-// so every id it requests must exist exactly once in the markup.
+// so every id it requests must exist exactly once in the markup the manifest opens —
+// index.r005.html since 0.8.3, which is what T128 pins.
+const liveMarkup = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
 const cacheBlock = actionCenter.slice(actionCenter.indexOf("function cacheElements()"));
 const requestedIds = [...cacheBlock.slice(0, cacheBlock.indexOf("]")).matchAll(/"([A-Za-z][\w-]*)"/gu)].map((m) => m[1]);
-const markupIds = [...markup.matchAll(/\sid="([^"]+)"/gu)].map((m) => m[1]);
+const markupIds = [...liveMarkup.matchAll(/\sid="([^"]+)"/gu)].map((m) => m[1]);
 const missingIds = requestedIds.filter((id) => !markupIds.includes(id));
 const duplicateIds = markupIds.filter((id, index) => markupIds.indexOf(id) !== index);
 check("T26 every element cacheElements requests exists exactly once in the markup",
@@ -1636,6 +1638,46 @@ check("T174 the projection keeps no second copy of the settings",
   && !/^const (?!\{)\w+ = (?!Object\.freeze)/mu.test(settingsViewSource.replace(/export const SETTINGS_CONTROL_IDS[\s\S]*?\]\);/u, ""))
   && /hydrateSettings\(\) \{\s*projectSettings\(elements, state\.settings\)/u.test(actionCenter)
   && !/settingsDraft|settingsCopy|state\.settingsForm/u.test(actionCenter));
+
+// ---- 0.8.4: About, a subview of Settings (029 §3.8), and the LICENSE (029 §3.9) ----
+
+const markupR005Now = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
+const actionCenterNow = readFileSync(new URL("../action-center/app.js", import.meta.url), "utf8");
+const settingsScreen = markupR005Now.slice(markupR005Now.indexOf('data-screen="settings"'), markupR005Now.indexOf('<div class="status">'));
+const aboutPanel = settingsScreen.slice(settingsScreen.indexOf('id="aboutPanel"'));
+
+check("T175 About is a tab inside Settings, not a new rail entry",
+  (markupR005Now.match(/class="rail-btn"/gu) || []).length === 7
+  && !/data-go="about"/u.test(markupR005Now)
+  && /<button[^>]*data-view="about"[^>]*role="tab"/u.test(settingsScreen)
+  && /id="aboutPanel"[^>]*role="tabpanel"/u.test(settingsScreen)
+  && /id="settingsDialog"[^>]*role="tabpanel"/u.test(settingsScreen));
+
+check("T176 About names the product Insist, for Thunderbird, and nothing else",
+  /id="aboutProductName">Insist</u.test(aboutPanel)
+  && /id="aboutPlatform">for Thunderbird</u.test(aboutPanel)
+  && !/Civion Mail|CIVION Mail|Civion Insist/u.test(aboutPanel));
+
+check("T177 the version on About comes from the manifest, never from a literal",
+  /function renderAbout\(\)[\s\S]*?messenger\.runtime\.getManifest\(\)[\s\S]*?aboutVersion/u.test(actionCenterNow)
+  && !/\d+\.\d+\.\d+/u.test(aboutPanel)
+  && /renderAbout\(\);/u.test(actionCenterNow.slice(actionCenterNow.indexOf("async function initialize()"))));
+
+check("T178 the copyright line is the canon line and the licence opens locally",
+  /Copyright © 2026 Plamen Alexandrov\. All rights reserved\./u.test(aboutPanel)
+  && /proprietary/u.test(aboutPanel)
+  && /messenger\.runtime\.getURL\("LICENSE"\)/u.test(actionCenterNow)
+  && !/https?:\/\//u.test(aboutPanel)
+  && !/Third-party/iu.test(aboutPanel)
+  && /connect-src 'none'/u.test(manifest.content_security_policy.extension_pages));
+
+const licenseText = readFileSync(new URL("../LICENSE", import.meta.url), "utf8").replace(/\r\n/gu, "\n");
+check("T179 LICENSE at the root is the standard Civion proprietary notice, warranty clause included",
+  licenseText.startsWith("Civion Proprietary License\nCopyright © 2026 Plamen Alexandrov. All rights reserved.\n")
+  && /No permission is granted to copy, modify, adapt, merge, publish, distribute, sublicense, sell, lease, make available, or use the source code or other Civion-owned materials without explicit written permission from the copyright holder\./u.test(licenseText)
+  && /THE SOFTWARE AND MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND/u.test(licenseText)
+  && /Any permission, commercial license or other authorization must be granted explicitly in writing by the copyright holder\./u.test(licenseText)
+  && !/\bMIT License|Apache License|GNU General Public|open source/iu.test(licenseText));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

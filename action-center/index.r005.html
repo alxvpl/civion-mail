@@ -662,9 +662,13 @@
   <div class="head">
     <h1>Settings</h1>
     <p>Each switch says what it changes. Nothing here reaches a network.</p>
+    <div aria-label="Settings views" class="tabs" role="tablist">
+      <button aria-controls="settingsDialog" aria-selected="true" class="tab" data-view="settings" id="tab-settings" role="tab" type="button">Settings</button>
+      <button aria-controls="aboutPanel" aria-selected="false" class="tab" data-view="about" id="tab-about" role="tab" tabindex="-1" type="button">About</button>
+    </div>
   </div>
   <div class="body">
-    <div class="stack" id="settingsDialog">
+    <div aria-labelledby="tab-settings" class="stack" data-view="settings" id="settingsDialog" role="tabpanel" tabindex="0">
       <section class="pane"><p class="pane-note">Local mode. This version makes no network request and sends no message or attachment to any external service. The only outbound channel is the Native Messaging host on this machine, and only when the Desktop bridge below is on.</p></section>
       <form id="settingsForm">
 
@@ -720,6 +724,26 @@
           <button class="btn primary" id="saveSettingsButton" type="button">Save</button>
         </div>
       </form>
+    </div>
+
+    <!-- About: the product identity and the licence. The version and the licence link
+         come from the manifest and runtime.getURL at load; nothing here is a network
+         address, and there is no third-party section because the package carries no
+         third-party material. -->
+    <div aria-labelledby="tab-about" class="stack" data-view="about" hidden="" id="aboutPanel" role="tabpanel" tabindex="0">
+      <section class="pane about-identity">
+        <p class="about-name" id="aboutProductName">Insist</p>
+        <p class="about-platform" id="aboutPlatform">for Thunderbird</p>
+        <dl class="kv">
+          <div><dt>Version</dt><dd id="aboutVersion">—</dd></div>
+        </dl>
+      </section>
+      <section class="pane">
+        <header class="pane-h"><h2>Copyright and licence</h2></header>
+        <p class="pane-note" id="aboutCopyright">Copyright © 2026 Plamen Alexandrov. All rights reserved.</p>
+        <p class="pane-note">The source code is proprietary. It may not be copied, modified, distributed, sublicensed, published or used without explicit written permission from the copyright holder.</p>
+        <p class="pane-note"><a href="#" id="aboutLicenseLink">Read the full LICENSE</a> — the licence text packaged with the extension, opened locally.</p>
+      </section>
     </div>
   </div>
 </section>

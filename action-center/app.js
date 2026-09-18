@@ -204,7 +204,8 @@ function cacheElements() {
     "archiveExistingDateFrom", "archiveExistingDateTo", "archiveExistingMaxMessages",
     "archiveExistingExamined", "archiveExistingPdfMessages", "archiveExistingRecognized", "archiveExistingArchived", "archiveExistingAlready",
     "archiveExistingSkipped", "archiveExistingPending", "archiveExistingFailed", "archiveExistingCurrentFolder", "archiveExistingNote",
-    "archiveExistingCancelButton", "archiveExistingStartButton", "recordContextMenu", "toast"
+    "archiveExistingCancelButton", "archiveExistingStartButton", "recordContextMenu", "toast",
+    "aboutVersion", "aboutLicenseLink"
   ]) {
     elements[id] = $(id);
   }
@@ -2224,6 +2225,30 @@ function openSettings() {
   elements.settingsDialog.showModal();
 }
 
+// About reads the version from the manifest — the same source Self Check uses — and
+// never from a string in this file, so it cannot drift from the package. The licence
+// is a resource of the extension, addressed through runtime.getURL and opened in a
+// Thunderbird tab; nothing on this screen names a network address.
+function renderAbout() {
+  const manifest = messenger.runtime.getManifest();
+  setText(elements.aboutVersion, manifest?.version ? `v${manifest.version}` : "", "—");
+  elements.aboutLicenseLink.href = messenger.runtime.getURL("LICENSE");
+}
+
+async function openLicense() {
+  const url = messenger.runtime.getURL("LICENSE");
+  try {
+    if (messenger.tabs?.create) {
+      await messenger.tabs.create({ url });
+      return;
+    }
+  } catch (error) {
+    showToast(error.message, true);
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 async function saveSettings() {
   elements.saveSettingsButton.disabled = true;
   try {
@@ -2638,6 +2663,10 @@ function bindEvents() {
 
   elements.settingsButton.addEventListener("click", openSettings);
   elements.settingsDialog.addEventListener("show", hydrateSettings);
+  elements.aboutLicenseLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    void openLicense();
+  });
   elements.saveSettingsButton.addEventListener("click", saveSettings);
   elements.saveDetailButton.addEventListener("click", saveDetail);
 
@@ -2749,6 +2778,7 @@ async function initialize() {
   loadViewPreferences();
   updateSortHeaders();
   bindEvents();
+  renderAbout();
   try {
     await loadState(true);
     hydrateSettings();
