@@ -1,5 +1,52 @@
 # CIVION Mail — CHANGELOG
 
+## v0.8.4 — 2026-09-18
+
+### Settings shows what is stored, the transport says why it failed, and the add-on is called Insist
+
+- **The user-facing name of the Thunderbird add-on is now Insist** (Insist for
+  Thunderbird). The extension ID, the native host `nl.civion.desktop`, the protocol
+  and storage identifiers and the existing mailbox tag labels are unchanged; the
+  artifact is `Civion-Insist-0.8.4.xpi`.
+- **Settings shows the stored values on every path.** The form was filled only by
+  the one button that used to open the dialog; reached through the rail, a shortcut,
+  or on the way back after Save, it showed the HTML defaults — for the Desktop
+  bridge and the PDF archive the opposite of the stored ones. One projection
+  (`views-settings.mjs`) now runs after load, on every arrival and after Save has
+  read the stored values back. No `checked=` was added to the markup and no default
+  was restated. `T164`–`T174` execute it, including the clean-store case.
+- **About**, a subview of Settings: the product name, the platform line, the version
+  read from the manifest, the copyright line, the proprietary statement and a link
+  to the packaged `LICENSE`, opened locally.
+- **`LICENSE`** at the repository root: the Civion proprietary notice, verbatim from
+  the Product Licensing Canon r002. `README.md` and `README_BG.md` state the position.
+- **A disconnect says why.** `port.error` is read and classified into `HOST_NOT_FOUND`,
+  `HOST_DISCONNECTED`, `DISCONNECT_NO_REASON` or `UNCLASSIFIED`, matched against the
+  platform's own messages; the platform text is not persisted. `HOST_NOT_FOUND`
+  cannot distinguish a missing registration from one that points at another body —
+  the platform gives one message for both.
+- **The typed failure code survives.** `MAIL_RUNTIME_TIMEOUT`, `MAIL_RUNTIME_DISCONNECTED`,
+  `MAIL_RUNTIME_PROTOCOL_ERROR` and the host's own refusal code reach the bridge
+  metrics instead of being collapsed into `*_NATIVE_FAILED`; the fallback words
+  remain for an error that says nothing. The `bridge_metrics` object in the status
+  packet keeps exactly its five fields.
+- **The startup probe is recorded**: attempt, outcome, last successful contact and
+  the classified cause, in `metadata.desktopBridge`. No second probe was added.
+- **Self Check has a separate transport check** with four states — `NEVER_ATTEMPTED`,
+  `INDETERMINATE`, `FAILED`, `OK` — beside the untouched Thunderbird runtime check.
+  An unknown state is a warning, never a pass.
+- **System → Bridge**, a fourth tab: last attempt, last successful contact, last
+  failure with its cause, the counters, and the state as a labelled chip (green for
+  OK, red for an observed failure, ochre for the two unknown states). It describes
+  the add-on's side of the transport and nothing about the Mail domain or Desktop.
+- **`action-center/index.html` and `action-center/styles.css` are removed.** The
+  pre-r005 wrapper had stayed in the package with no reference to it.
+
+Analysis rules are unchanged and stay `local-rules-0.8.0`. The ingestion contract,
+the native contract (version 2), the permissions, the CSP and the storage schema
+are unchanged. 0.8.3 was the 0.8.2 body with the manifest, the background and the
+popup opening the r005 shell, and is the baseline this release is built on.
+
 ## v0.8.2 — 2026-09-12
 
 ### One permission fewer, and a diagnostics panel that finishes rendering

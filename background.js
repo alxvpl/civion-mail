@@ -875,10 +875,10 @@ async function ensureMenus() {
   }
   if (messenger.menus.removeAll) await messenger.menus.removeAll();
   const items = [
-    { id: MENU_IDS.openTools, title: "CIVION Mail — Open Action Center", contexts: ["tools_menu"] },
-    { id: MENU_IDS.analyzeTools, title: "CIVION Mail — Analyze selected message", contexts: ["tools_menu"] },
-    { id: MENU_IDS.openMessage, title: "CIVION Mail — Open Action Center", contexts: ["message_list"] },
-    { id: MENU_IDS.analyzeMessage, title: "CIVION Mail — Analyze selected message", contexts: ["message_list"] }
+    { id: MENU_IDS.openTools, title: "Insist — Open Action Center", contexts: ["tools_menu"] },
+    { id: MENU_IDS.analyzeTools, title: "Insist — Analyze selected message", contexts: ["tools_menu"] },
+    { id: MENU_IDS.openMessage, title: "Insist — Open Action Center", contexts: ["message_list"] },
+    { id: MENU_IDS.analyzeMessage, title: "Insist — Analyze selected message", contexts: ["message_list"] }
   ];
   for (const item of items) await messenger.menus.create(item);
 }
@@ -907,7 +907,7 @@ async function ensureActionCenterSpace() {
     SPACE_NAME,
     ACTION_CENTER_PATH,
     {
-      title: "CIVION Mail",
+      title: "Insist",
       defaultIcons: {
         "16": "icons/icon-16.png",
         "32": "icons/icon-32.png"
@@ -931,7 +931,7 @@ async function updateToolbarBadge(activeCount) {
       await messenger.action.setBadgeBackgroundColor({ color: "#397A46" });
     }
     if (messenger.action.setTitle) {
-      await messenger.action.setTitle({ title: `CIVION Mail is active — ${activeCount} actionable records` });
+      await messenger.action.setTitle({ title: `Insist is active — ${activeCount} actionable records` });
     }
   } catch (error) {
     await logDiagnostic("warning", "ACTION_BADGE_FAILED", { message: safeError(error) });
@@ -954,7 +954,7 @@ async function updateActionCenterBadge() {
       spaceId,
       ACTION_CENTER_PATH,
       {
-        title: "CIVION Mail",
+        title: "Insist",
         badgeText: activeCount ? String(Math.min(activeCount, 999)) : null,
         badgeBackgroundColor: "#9B1C1C"
       }

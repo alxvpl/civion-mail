@@ -322,7 +322,7 @@ async function contextOpenOriginal(record) {
 
 async function contextDeleteOriginal(record) {
   if (record.messageAvailable === false) throw new Error("The original email is no longer available.");
-  if (!window.confirm("Delete the original email? CIVION Mail will not use permanent delete; Thunderbird will apply the standard deletion behavior for this account. The analysis record will be kept.")) return;
+  if (!window.confirm("Delete the original email? Insist will not use permanent delete; Thunderbird will apply the standard deletion behavior for this account. The analysis record will be kept.")) return;
   await send("deleteOriginal", { recordId: record.id });
   await loadState(false);
   showToast("The original email was deleted through Thunderbird.");
@@ -353,7 +353,7 @@ async function contextSetDomain(record, disposition) {
   const warning = disposition === "allow"
     ? `Add the exact domain “${domain}” to the local allowlist? This does NOT make it automatically safe and does not override Institution Hard Block or authentication checks.`
     : disposition === "block"
-      ? `Block the exact domain “${domain}” in CIVION Mail? After reanalysis, messages from it will receive a Hard Block.`
+      ? `Block the exact domain “${domain}” in Insist? After reanalysis, messages from it will receive a Hard Block.`
       : `Remove the domain “${domain}” from the manual allowlist/blocklist?`;
   if (!window.confirm(warning)) return;
   await send("setDomainDisposition", { domain, disposition });
@@ -2686,7 +2686,7 @@ function bindEvents() {
   elements.deleteOriginalButton.addEventListener("click", async () => {
     const record = selectedRecord();
     if (!record) return;
-    if (!window.confirm("Delete the original email? CIVION Mail will not use permanent delete; Thunderbird will apply the standard deletion behavior for this account. The analysis record will be kept.")) return;
+    if (!window.confirm("Delete the original email? Insist will not use permanent delete; Thunderbird will apply the standard deletion behavior for this account. The analysis record will be kept.")) return;
     elements.deleteOriginalButton.disabled = true;
     try {
       await send("deleteOriginal", { recordId: record.id });
@@ -2783,7 +2783,7 @@ async function initialize() {
     await loadState(true);
     hydrateSettings();
   } catch (error) {
-    showToast(`CIVION Mail could not load data: ${error.message}`, true);
+    showToast(`Insist could not load data: ${error.message}`, true);
   }
 }
 

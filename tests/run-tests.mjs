@@ -338,7 +338,7 @@ check("T43 the scan reports non-admission without calling it a spam verdict",
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 check("T44 manifest version and extension identity are intact",
-  manifest.version === "0.8.2"
+  manifest.version === "0.8.4"
   && manifest.browser_specific_settings.gecko.id === "mail-sentinel@local.invalid"
   && !("host_permissions" in manifest),
   `version=${manifest.version}`);
@@ -1870,6 +1870,40 @@ check("T191 System → Bridge is a fourth tab fed by the published state, with a
   && /chip\.textContent = bridge\.label/u.test(bridgeViewSource)
   && /Mail domain/u.test(systemScreen.slice(systemScreen.indexOf('id="bridgePanel"')))
   && /views-bridge\.mjs/u.test(markupR005Now));
+
+// ---- 0.8.4: the rename is bounded (029 §3.7) ----
+
+const popupMarkup = readFileSync(new URL("../popup/index.html", import.meta.url), "utf8");
+const federationSource = readFileSync(new URL("../modules/federation.mjs", import.meta.url), "utf8");
+check("T192 the visible product name is Insist: manifest, actions, command, Action Center title, popup, menus, space",
+  manifest.name === "Insist"
+  && manifest.action.default_title === "Insist — Open controls"
+  && manifest.action.default_label === "Insist"
+  && manifest.message_display_action.default_title === "Insist — Analyze this message"
+  && manifest.message_display_action.default_label === "Insist"
+  && manifest.commands._execute_action.description === "Open Insist controls"
+  && /<title>Insist — Action Center<\/title>/u.test(markupR005Now)
+  && /<title>Insist<\/title>/u.test(popupMarkup) && /<h1>Insist<\/h1>/u.test(popupMarkup)
+  && /title: "Insist — Open Action Center", contexts: \["tools_menu"\]/u.test(bgNow)
+  && /title: "Insist — Analyze selected message", contexts: \["message_list"\]/u.test(bgNow)
+  && (bgNow.match(/title: "Insist",/gu) || []).length === 2
+  && !/CIVION Mail|Civion Mail/u.test(JSON.stringify([manifest.name, manifest.action, manifest.message_display_action, manifest.commands])));
+
+check("T193 the stable identifiers, the tag labels and the contract fields did not move with the name",
+  manifest.browser_specific_settings.gecko.id === "mail-sentinel@local.invalid"
+  && /const DESKTOP_NATIVE_HOST = "nl\.civion\.desktop";/u.test(bgNow)
+  && /const DESKTOP_NATIVE_CONTRACT = "CIVION_DESKTOP_MAIL_NATIVE";/u.test(bgNow)
+  && /const DESKTOP_BRIDGE_VERSION = "0\.2";/u.test(bgNow)
+  && /exportFormat: "CIVION_MAIL_BRIDGE_STATUS"/u.test(bgNow)
+  && /Critical: \{ key: "mail-sentinel-critical", label: "CIVION Mail — Critical"/u.test(bgNow)
+  && /"No Action": \{ key: "mail-sentinel-no-action", label: "CIVION Mail — No Action"/u.test(bgNow)
+  && /source_project: "CIVION Mail"/u.test(federationSource)
+  && /current_module: "CIVION Mail"/u.test(federationSource)
+  && /mailSentinelSettings/u.test(storageSource)
+  && MAIL_RUNTIME_CONTRACT_VERSION === 2
+  && manifest.permissions.join() === "accountsRead,messagesRead,messagesDelete,messagesUpdate,messagesTags,messagesTagsList,storage,menus,nativeMessaging"
+  && !("host_permissions" in manifest)
+  && manifest.content_security_policy.extension_pages.includes("connect-src 'none'"));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

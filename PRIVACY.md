@@ -1,4 +1,6 @@
-# CIVION Mail v0.6.11 — Privacy Statement
+# Insist — Privacy Statement
+
+Insist (Insist for Thunderbird) е потребителското име от 0.8.4 на добавката, доставяна дотогава като CIVION Mail. Идентификаторът на разширението, native host-ът, протоколът, ключовете в хранилището и етикетите на съществуващите тагове са непроменени; записите по-долу за по-стари версии остават както са написани.
 
 ## Режим
 
@@ -6,7 +8,7 @@
 
 ## Какво се прочита
 
-За новопостъпилите писма и за писмата, включени в изрично стартиран Historical Scan, CIVION Mail временно прочита:
+За новопостъпилите писма и за писмата, включени в изрично стартиран Historical Scan, Insist временно прочита:
 
 - Thunderbird message identifier и `Message-ID` header;
 - папка и акаунт;
@@ -55,11 +57,11 @@ Action Center може да създаде JSON export чрез локален `
 
 ## CIVION candidate export
 
-Action Center може изрично да създаде локален candidate-only пакет `CIVION_MAIL_CANDIDATE_PACKAGE` v2 по `CivionMailIngestion` v0.2. Пакетът не се изпраща автоматично и не дава на CIVION Mail право да записва директно в CIVION Core/PostgreSQL. CIVION Civic полетата са reference candidates; каноничната административна идентичност остава отговорност на CIVION Civic/Core според активните module contracts.
+Action Center може изрично да създаде локален candidate-only пакет `CIVION_MAIL_CANDIDATE_PACKAGE` v2 по `CivionMailIngestion` v0.2. Пакетът не се изпраща автоматично и не дава на Insist право да записва директно в CIVION Core/PostgreSQL. CIVION Civic полетата са reference candidates; каноничната административна идентичност остава отговорност на CIVION Civic/Core според активните module contracts.
 
 ## Автоматичен локален Desktop bridge
 
-От v0.6.2 CIVION Mail използва Desktop-owned Native Messaging host `nl.civion.desktop` като основен unattended same-machine transport. Candidate пакетите запазват candidate-only authority. В v0.6.3 отделен `untrusted_evidence_only` пакет може да съдържа bounded exact RFC822 bytes, когато Thunderbird все още има съобщението. Transport-ът не е канонично приемане и не разрешава външни действия. Функцията може да бъде изключена от Settings. Старият Downloads spool вече не се пише от добавката: `downloads` разрешението е свалено, защото след въвеждането на Native Messaging host-а нищо не го използваше. Останалите от по-стари версии файлове в него остават четими за Desktop слоя.
+От v0.6.2 Insist използва Desktop-owned Native Messaging host `nl.civion.desktop` като основен unattended same-machine transport. Candidate пакетите запазват candidate-only authority. В v0.6.3 отделен `untrusted_evidence_only` пакет може да съдържа bounded exact RFC822 bytes, когато Thunderbird все още има съобщението. Transport-ът не е канонично приемане и не разрешава външни действия. Функцията може да бъде изключена от Settings. Старият Downloads spool вече не се пише от добавката: `downloads` разрешението е свалено, защото след въвеждането на Native Messaging host-а нищо не го използваше. Останалите от по-стари версии файлове в него остават четими за Desktop слоя.
 
 PDF архивът от v0.6.8 никога не използва Downloads. Ако `F:\01_ARCHIVE\CIVION` не е достъпен, документът не се записва другаде: отбелязва се `pending` и може да бъде изпратен повторно. Няма облачно изпращане.
 
@@ -82,7 +84,7 @@ PDF архивът от v0.6.8 никога не използва Downloads. А�
 Потребителят може:
 
 - да премахне отделен анализ;
-- да изтрие ръчно оригиналния имейл от detail view или от контекстното меню на реда. Това действие използва Thunderbird `messages.delete()` само след изрично потвърждение, с `deletePermanently: false`; CIVION Mail не извършва автоматично или permanent delete;
+- да изтрие ръчно оригиналния имейл от detail view или от контекстното меню на реда. Това действие използва Thunderbird `messages.delete()` само след изрично потвърждение, с `deletePermanently: false`; Insist не извършва автоматично или permanent delete;
 - да добавя или премахва sender domains от локален whitelist/blocklist. Whitelist не е authentication bypass и не отменя Protected Identity hard block;
 - да изчисти всички Completed и Dismissed записи;
 - да намали retention периода и максималния брой записи;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "CIVION Mail",
-  "version": "0.8.3",
+  "name": "Insist",
+  "version": "0.8.4",
   "description": "Local-first Thunderbird runtime with intelligent PDF classification, automatic new-mail archival and controlled all-account archival of existing documents to the validated CIVION archive on drive F:.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -34,8 +34,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "CIVION Mail — Open controls",
-    "default_label": "CIVION Mail",
+    "default_title": "Insist — Open controls",
+    "default_label": "Insist",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
@@ -52,15 +52,15 @@
       "suggested_key": {
         "default": "Ctrl+Shift+M"
       },
-      "description": "Open CIVION Mail controls"
+      "description": "Open Insist controls"
     }
   },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'"
   },
   "message_display_action": {
-    "default_title": "CIVION Mail — Analyze this message",
-    "default_label": "CIVION Mail",
+    "default_title": "Insist — Analyze this message",
+    "default_label": "Insist",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"

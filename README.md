@@ -1,12 +1,22 @@
-# CIVION Mail
+# Insist
 
-**Local-first Thunderbird mail intelligence and document-ingestion edge for CIVION.**
+**Insist for Thunderbird — the local-first mail intelligence and document-ingestion edge of Civion.**
 
-CIVION Mail is the mail-facing runtime of the CIVION personal administration system. It runs inside Thunderbird, analyzes mail locally, maintains a structured operational view of messages, preserves evidence through the local CIVION Desktop bridge, and can archive recognized PDF documents into the local CIVION archive.
+Insist is the user-facing name, since 0.8.4, of the Thunderbird add-on previously delivered as CIVION Mail. The name is the only thing that changed with it: the extension ID `mail-sentinel@local.invalid`, the native host `nl.civion.desktop`, the protocol and storage identifiers and the existing mailbox tag labels are unchanged, and historical release records below keep the name they were made under. In Civion's architecture it remains the Mail Extension.
 
-It is deliberately **not** a second canonical database. CIVION Mail produces local observations, analysis records, evidence and candidate packages; canonical administrative state remains owned by CIVION Core and the relevant CIVION modules.
+Insist is the mail-facing runtime of the Civion personal administration system. It runs inside Thunderbird, analyzes mail locally, maintains a structured operational view of messages, preserves evidence through the local CIVION Desktop bridge, and can archive recognized PDF documents into the local CIVION archive.
 
-## Current release
+It is deliberately **not** a second canonical database. Insist produces local observations, analysis records, evidence and candidate packages; canonical administrative state remains owned by CIVION Core and the relevant CIVION modules.
+
+## Licence
+
+Insist is proprietary software. Copyright © 2026 Plamen Alexandrov. All rights reserved. The source code, documentation, design assets and other original Civion materials in this repository may not be copied, modified, distributed, sublicensed, published or used without explicit written permission from the copyright holder; visibility of the repository grants no licence. The full text is in [`LICENSE`](LICENSE) at the repository root and is packaged with the extension (Settings → About). This is not open-source software.
+
+## Current source
+
+The version is declared once, in `manifest.json`, and every surface reads it from there. The current source line is **0.8.4**; see [`CHANGELOG.md`](CHANGELOG.md) for what it changes. The release record below is the historical v0.6.11 record and is kept as written.
+
+## Release record: v0.6.11 (historical)
 
 **Latest delivered build: CIVION Mail v0.6.11 — 2026-09-05**
 
@@ -40,11 +50,11 @@ The release re-ranks the Action Center instead of adding more controls to an alr
 
 **Verification status:** JavaScript/MJS syntax checks, Action Center markup/wiring checks, targeted jsdom functional tests and package-integrity checks were performed. The full automated CIVION Mail test suite was **not executed for v0.6.11**. v0.6.9 had 61 passing automated Mail tests; no equivalent claim is made for v0.6.10 or v0.6.11.
 
-## What CIVION Mail does
+## What Insist does
 
 ### Local message analysis
 
-CIVION Mail analyzes mail into separate semantic dimensions instead of collapsing everything into a single category. Current records can include:
+Insist analyzes mail into separate semantic dimensions instead of collapsing everything into a single category. Current records can include:
 
 - Relationship Class;
 - Document Type;
@@ -66,7 +76,7 @@ The authentication engine evaluates receiver-produced `Authentication-Results` a
 
 Trusted authentication results can contribute to a verified verdict. Unknown or untrusted `Authentication-Results` do not gain verification authority. Protected-identity domain mismatch remains a hard block and is not bypassed by a local whitelist.
 
-CIVION Mail does **not** perform DNS lookups for this process.
+Insist does **not** perform DNS lookups for this process.
 
 ### Junk admission gate
 
@@ -79,14 +89,14 @@ Since v0.6.10:
 - the gate runs on the live new-mail path as well as Historical Scan;
 - manual blocked domains reach the gate correctly;
 - the gate is evaluated before historical existing-record handling;
-- a message while located in Junk is read-only from CIVION Mail's perspective — no tagging, moving or other message write is performed by the analysis path;
+- a message while located in Junk is read-only from Insist's perspective — no tagging, moving or other message write is performed by the analysis path;
 - an explicitly selected Junk message may still be analyzed if admitted, but the message itself is not modified.
 
 An admitted Junk record does not yet have a dedicated presentation state, and the periodic-pass mechanism remains deferred.
 
 ### Action Center
 
-Action Center is the main operational UI for CIVION Mail. It provides a structured view of analyzed messages rather than acting as another mailbox list.
+Action Center is the main operational UI for Insist. It provides a structured view of analyzed messages rather than acting as another mailbox list.
 
 As of v0.6.11, routine triage controls are separated from heavier operations. The interface emphasizes the most actionable information first, while account, folder, recipients, timestamps, analysis mode and language are available under `Message and analysis details` rather than competing with risk, deadline and obligation evidence.
 
@@ -104,11 +114,11 @@ Historical work is processed in bounded batches so live mail handling can contin
 
 ### Exact RFC822 evidence preservation
 
-When Thunderbird still exposes the original message, CIVION Mail can read the exact RFC822 bytes and pass them through the same-machine Native Messaging channel to the CIVION Desktop host.
+When Thunderbird still exposes the original message, Insist can read the exact RFC822 bytes and pass them through the same-machine Native Messaging channel to the CIVION Desktop host.
 
 Desktop validates identity, byte length and SHA-256 before storing the `.eml` as **untrusted local evidence**. This preserves the original source without turning imported mail content into canonical CIVION state.
 
-Historical records for which the original Thunderbird message is no longer available remain honestly metadata-only; CIVION Mail does not reconstruct missing message content.
+Historical records for which the original Thunderbird message is no longer available remain honestly metadata-only; Insist does not reconstruct missing message content.
 
 ### Intelligent PDF archive
 
@@ -126,7 +136,7 @@ Recognized document classes include invoices, receipts, statements, insurance po
 
 High-risk or hard-blocked messages are not automatically archived.
 
-If the archive drive or Desktop host is unavailable, the document remains pending. CIVION Mail does **not** silently fall back to Downloads.
+If the archive drive or Desktop host is unavailable, the document remains pending. Insist does **not** silently fall back to Downloads.
 
 ### Archive existing PDFs
 
@@ -140,7 +150,7 @@ The pass can be stopped and safely repeated. The Desktop SHA-256 index makes the
 
 ## CIVION integration
 
-CIVION Mail is an **edge/source runtime**, not the canonical CIVION master.
+Insist is an **edge/source runtime**, not the canonical CIVION master.
 
 The main integration path is the Desktop-owned Native Messaging host:
 
@@ -148,7 +158,7 @@ The main integration path is the Desktop-owned Native Messaging host:
 Thunderbird
     |
     v
-CIVION Mail
+Insist (Mail Extension)
     |
     | Native Messaging — same machine only
     v
@@ -161,13 +171,13 @@ nl.civion.desktop
 CIVION Desktop / downstream CIVION processing
 ```
 
-Candidate packages remain candidate-only. Transport does not itself mean acceptance into CIVION Core, and CIVION Mail has no authority to write canonical Core state directly.
+Candidate packages remain candidate-only. Transport does not itself mean acceptance into CIVION Core, and Insist has no authority to write canonical Core state directly.
 
 The legacy Downloads spool remains only a diagnostic/backward-compatible path for candidate JSON where supported. PDF archival never uses Downloads.
 
 ## Privacy and security model
 
-CIVION Mail is designed as a local-first extension.
+Insist is designed as a local-first extension.
 
 The current extension contains no cloud AI provider integration, telemetry endpoint, remote script, remote font or general external-network integration. Its extension CSP keeps:
 
@@ -177,23 +187,23 @@ connect-src 'none'
 
 There is no `fetch`, `XMLHttpRequest` or remote host permission in the extension runtime. `nativeMessaging` is used for the local Desktop-owned host `nl.civion.desktop` on the same machine.
 
-During analysis CIVION Mail may temporarily read message identifiers, account/folder context, sender/recipients, subject/date, inline text, relevant mail-authentication headers, HTML link targets/text and attachment metadata. These inputs are used locally.
+During analysis Insist may temporarily read message identifiers, account/folder context, sender/recipients, subject/date, inline text, relevant mail-authentication headers, HTML link targets/text and attachment metadata. These inputs are used locally.
 
 The extension does not persist the full message body or attachment contents in `messenger.storage.local`. Exact RFC822 evidence and PDF bytes are transferred only through the local Desktop bridge for the explicit local preservation/archive functions described above.
 
-Manual deletion of an original Thunderbird message is user-triggered, confirmation-gated and non-permanent (`deletePermanently: false`). CIVION Mail does not automatically delete mail.
+Manual deletion of an original Thunderbird message is user-triggered, confirmation-gated and non-permanent (`deletePermanently: false`). Insist does not automatically delete mail.
 
 ## Installation and dependencies
 
 ### Thunderbird
 
-CIVION Mail v0.6.11 requires Thunderbird `140.0` or newer.
+Insist requires Thunderbird `140.0` or newer (`strict_min_version` in `manifest.json`).
 
 For an XPI installation:
 
 1. Open Thunderbird Add-ons and Themes.
 2. Choose **Install Add-on From File…**.
-3. Select the verified CIVION Mail XPI.
+3. Select the verified Insist XPI (`Civion-Insist-<version>.xpi`).
 4. Confirm the extension installation/update.
 
 The extension ID remains `mail-sentinel@local.invalid` for compatibility with the existing Mail Sentinel/CIVION Mail installation lineage and local extension storage.
@@ -243,7 +253,7 @@ For v0.6.11, the owner-delivered XPI is the verified build artifact identified b
 
 ## Authority boundary
 
-CIVION Mail can analyze, classify, preserve evidence, create candidates and perform explicitly authorized local mailbox/document operations. It does not gain authority merely because content arrived by email.
+Insist can analyze, classify, preserve evidence, create candidates and perform explicitly authorized local mailbox/document operations. It does not gain authority merely because content arrived by email.
 
 Mail bodies, attachments, imported PDFs and embedded instructions are untrusted inputs. Analysis confidence is not verification, candidate state is not accepted state, and UI state is not canonical CIVION state.
 

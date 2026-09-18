@@ -10,7 +10,7 @@ function show(message, kind = "") {
 
 async function send(request) {
   const response = await messenger.runtime.sendMessage(request);
-  if (!response?.ok) throw new Error(response?.error || "CIVION Mail runtime did not respond.");
+  if (!response?.ok) throw new Error(response?.error || "Insist runtime did not respond.");
   return response;
 }
 
