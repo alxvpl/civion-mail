@@ -13,7 +13,7 @@ Three things cannot be proven by reading source:
 - that every derived screen is complete **on arrival**, rather than filling itself when
   some other screen is visited first.
 
-Three scripts cover them. All need `playwright` and the extension served over http — ES
+Four scripts cover them. All need `playwright` and the extension served over http — ES
 modules do not load from `file://`:
 
 ```
@@ -21,6 +21,7 @@ npx --yes serve -l 8712 .          # or any static server rooted at the extensio
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-identity-refresh.mjs
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-snapshot-screens.mjs
 BASE_URL=http://localhost:8712 node tests/ui-harness/check-review-commands.mjs
+BASE_URL=http://localhost:8712 node tests/ui-harness/check-settings-hydration.mjs
 ```
 
 `check-identity-refresh.mjs` attacks the freeze at every level in strict mode — outside
@@ -39,7 +40,13 @@ That is what "fed by snapshots, no duplicate state" looks like from the outside.
 reading and acknowledging a rule — and checks the loop closes with zero navigations, that
 a rejected reading is kept and names its finding, and that restoring puts it back.
 
-Both exit non-zero on the first failed expectation and leave the fixture as they found it.
+`check-settings-hydration.mjs` (0.8.4) arrives at Settings every way a person can — the
+rail, a shortcut from Trust, the legacy `showModal()` path, and the way back after Save
+has left the screen — and requires the form to show the stored values each time, across a
+reload too. The stub keeps a Save in `sessionStorage` for that, the way `storage.local`
+would. Against the 0.8.3 baseline four of its seven checks fail.
+
+All exit non-zero on the first failed expectation and leave the fixture as they found it.
 
 `tests/run-tests.mjs` needs no browser and covers everything else, including the pure
 derivations behind Today, Dates, Trust and all five Review queues. Dates takes

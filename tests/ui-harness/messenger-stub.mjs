@@ -235,19 +235,50 @@ function reviewSnapshot() {
   };
 }
 
+// Settings carry the background's real key names and its normalised defaults, and a
+// Save is kept for the life of the tab — sessionStorage stands in for storage.local —
+// so a reload in the same tab shows what was saved, the way Thunderbird does.
+const SETTINGS_KEY = "civion-harness-settings";
+const DEFAULT_SETTINGS = {
+  autoTag: false,
+  analyzeJunk: false,
+  retentionDays: 365,
+  maxRecords: 2000,
+  diagnosticLogging: false,
+  desktopBridgeEnabled: true,
+  automaticDocumentArchive: true,
+  trustedAuthservIds: [],
+  userAllowlistedDomains: [],
+  userBlockedDomains: []
+};
+function loadSettings() {
+  try {
+    const stored = sessionStorage.getItem(SETTINGS_KEY);
+    if (stored) return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+  } catch { /* a blocked store means the defaults */ }
+  return { ...DEFAULT_SETTINGS };
+}
+function normalizeSettings(patch) {
+  const next = { ...loadSettings() };
+  for (const key of ["autoTag", "analyzeJunk", "diagnosticLogging", "desktopBridgeEnabled", "automaticDocumentArchive"]) {
+    if (typeof patch[key] === "boolean") next[key] = patch[key];
+  }
+  for (const [key, min, max] of [["retentionDays", 7, 3650], ["maxRecords", 100, 50000]]) {
+    const value = Number(patch[key]);
+    if (Number.isFinite(value)) next[key] = Math.min(max, Math.max(min, Math.trunc(value)));
+  }
+  if (patch.trustedAuthservIds !== undefined) {
+    const source = Array.isArray(patch.trustedAuthservIds) ? patch.trustedAuthservIds : String(patch.trustedAuthservIds || "").split(/[\s,;]+/u);
+    next.trustedAuthservIds = [...new Set(source.map((id) => String(id).trim().toLowerCase()).filter(Boolean))];
+  }
+  try { sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  return next;
+}
+
 const STATE = {
   ok: true,
   records: RECORDS,
-  settings: {
-    autoTag: false,
-    desktopBridge: true,
-    documentArchive: true,
-    analyzeJunk: false,
-    retentionDays: 365,
-    maxRecords: 2000,
-    diagnostics: false,
-    trustedAuthserv: ""
-  },
+  get settings() { return loadSettings(); },
   accountLabels: { "account-1": "post@example.invalid" },
   categories: CATEGORIES,
   priorities: PRIORITIES,
@@ -264,6 +295,7 @@ const STATE = {
 
 const ANSWERS = {
   getState: () => STATE,
+  setSettings: (message) => ({ ok: true, settings: normalizeSettings(message.patch || {}) }),
   getHistoricalScanState: () => ({ ok: true, scan: null }),
   getArchiveExistingState: () => ({ ok: true, archive: null }),
   getHistoricalScanScope: () => ({
@@ -382,8 +414,14 @@ globalThis.messenger = {
       if (answer) return answer(message);
       return { ok: true };
     },
-    getManifest: () => ({ version: "0.8.2" }),
+    getManifest: () => ({ version: "0.8.4-harness", browser_specific_settings: { gecko: { id: "mail-sentinel@local.invalid" } } }),
+    // About resolves the packaged LICENSE through runtime.getURL; here the extension
+    // root is wherever the page is served from.
+    getURL: (path) => new URL(path, new URL("../", location.href)).href,
     onMessage: { addListener() {}, removeListener() {} }
+  },
+  tabs: {
+    async create({ url }) { window.open(url, "_blank", "noopener"); return { id: 1 }; }
   },
   storage: {
     local: {
