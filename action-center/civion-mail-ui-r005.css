@@ -15,7 +15,8 @@
    Everything else is byte-identical to the baseline, comments included,
    so a diff against the prototype stays readable.
 
-   Intended target: action-center/index.html as a linked stylesheet.
+   Linked from action-center/index.r005.html; the pre-r005 wrapper and its styles.css
+   left the package in 0.8.4.
    The manifest CSP is default-src 'self'; style-src 'self' — a linked
    stylesheet is allowed, an inline <style> is not.
 

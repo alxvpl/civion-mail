@@ -188,7 +188,11 @@ check("T20 the filtered empty state states that records are held, not that none 
   emptyResultText(filtered, 12));
 
 const actionCenter = readFileSync(new URL("../action-center/app.js", import.meta.url), "utf8");
-const markup = readFileSync(new URL("../action-center/index.html", import.meta.url), "utf8");
+// The markup the manifest opens. The pre-r005 wrapper, action-center/index.html, left
+// the package in 0.8.4: nothing referenced it and it would have shown neither the
+// Settings hydration nor the Bridge tab. T24 and T25, which described its topbar and its
+// stylesheet, went with it.
+const markup = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
 
 check("T21 the 'ready' empty state is suppressed whenever records are held",
   /elements\.emptyState\.hidden = records\.length !== 0 \|\| holdsRecords;/u.test(actionCenter)
@@ -200,21 +204,6 @@ check("T22 clearing filters returns the source filter to its default rather than
 
 check("T23 the disclosure bar announces changes to assistive technology",
   /<div aria-live="polite" class="filter-status"/u.test(markup));
-
-const topbarButtons = [...markup.matchAll(/<button class="([a-z-]+)" id="(civionExportButton|historicalScanButton|exportButton|diagnosticsButton|settingsButton)"/gu)]
-  .reduce((acc, match) => ({ ...acc, [match[2]]: match[1] }), {});
-check("T24 topbar commands carry three distinct weights",
-  topbarButtons.civionExportButton === "primary-button"
-  && topbarButtons.historicalScanButton === "menu-item"
-  && topbarButtons.exportButton === "menu-item"
-  && topbarButtons.diagnosticsButton === "quiet-button"
-  && topbarButtons.settingsButton === "quiet-button",
-  JSON.stringify(topbarButtons));
-
-const styles = readFileSync(new URL("../action-center/styles.css", import.meta.url), "utf8");
-check("T25 the third button weight is defined and uses existing tokens only",
-  /\.quiet-button \{/u.test(styles)
-  && !/#[0-9a-f]{3,6}/iu.test(styles.slice(styles.indexOf(".quiet-button {"), styles.indexOf(".topbar-divider"))));
 
 // cacheElements() throws on the first missing id and takes the whole panel down with it,
 // so every id it requests must exist exactly once in the markup the manifest opens —
@@ -1103,7 +1092,10 @@ check("T122 the Action Center states the resolved bound before the run starts",
   /resolvedHistoricalWindow\(/u.test(actionCenter)
   && /at most \$\{Math\.trunc\(maxMessages\)\} messages between/u.test(actionCenter)
   && !/no limit/u.test(actionCenter)
-  && !/means no limit/u.test(markup));
+  // The r005 markup says the opposite of what this used to forbid — "there is no value
+  // that means no limit" — so the check is for an offered unlimited value, not the words.
+  && !/(?:empty|blank|zero|0) means no limit/iu.test(markup)
+  && /There is no value that means no limit/u.test(markup));
 
 // The r005 shell is a second entry point into the same app.js, so it lives or dies by the
 // same binding contract. Keeping this here means the two markups can never drift apart.
