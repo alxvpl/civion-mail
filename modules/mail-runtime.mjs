@@ -48,10 +48,10 @@ export class MailRuntimeProtocolError extends Error {
 
 /** The connection went away with packages still outstanding. */
 export class MailRuntimeDisconnectedError extends Error {
-  constructor(message) {
+  constructor(message, code = "MAIL_RUNTIME_DISCONNECTED") {
     super(message);
     this.name = "MailRuntimeDisconnectedError";
-    this.code = "MAIL_RUNTIME_DISCONNECTED";
+    this.code = code;
   }
 }
 
@@ -80,6 +80,31 @@ export function createCorrelationId(uuid) {
 
 export function isValidCorrelationId(value) {
   return typeof value === "string" && CORRELATION_PATTERN.test(value);
+}
+
+export function classifyNativePortError(value) {
+  const message = String(value?.message ?? value ?? "").toLowerCase();
+  if (!message) return "MAIL_RUNTIME_DISCONNECTED";
+  if (/no such native application|native application.*not found|host.*not found/u.test(message)) {
+    return "MAIL_RUNTIME_NATIVE_APP_NOT_FOUND";
+  }
+  if (/access denied|permission denied|not allowed/u.test(message)) {
+    return "MAIL_RUNTIME_PERMISSION_DENIED";
+  }
+  if (/exited|exit code|terminated|broken pipe|connection closed/u.test(message)) {
+    return "MAIL_RUNTIME_HOST_EXITED";
+  }
+  return "MAIL_RUNTIME_DISCONNECTED";
+}
+
+function disconnectMessage(code) {
+  const labels = {
+    MAIL_RUNTIME_NATIVE_APP_NOT_FOUND: "The CIVION Mail Runtime native host is not registered",
+    MAIL_RUNTIME_PERMISSION_DENIED: "Thunderbird could not access the CIVION Mail Runtime native host",
+    MAIL_RUNTIME_HOST_EXITED: "The CIVION Mail Runtime native host exited",
+    MAIL_RUNTIME_DISCONNECTED: "The CIVION Mail Runtime connection closed"
+  };
+  return labels[code] || labels.MAIL_RUNTIME_DISCONNECTED;
 }
 
 /**
@@ -167,10 +192,11 @@ export function createMailRuntime({
     });
 
     port.onDisconnect.addListener(() => {
+      const code = classifyNativePortError(port.error);
       failSession(
         current,
-        new MailRuntimeDisconnectedError("The CIVION Mail Runtime connection closed"),
-        { type: "disconnected" }
+        new MailRuntimeDisconnectedError(disconnectMessage(code), code),
+        { type: "disconnected", code }
       );
     });
 
@@ -212,10 +238,11 @@ export function createMailRuntime({
         // send to reuse. So the session fails as a whole: every outstanding
         // request is settled, in order, with the same reason; the port is
         // let go; and the next send opens a fresh one.
+        const code = classifyNativePortError(cause);
         failSession(
           current,
-          new MailRuntimeDisconnectedError(String(cause?.message || cause)),
-          { type: "send-failed", messageId }
+          new MailRuntimeDisconnectedError(disconnectMessage(code), code),
+          { type: "send-failed", messageId, code }
         );
       }
     });
