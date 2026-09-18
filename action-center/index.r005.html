@@ -10,6 +10,7 @@
 <script src="views-identity.mjs" type="module"></script>
 <script src="views-review.mjs" type="module"></script>
 <script src="views-dates.mjs" type="module"></script>
+<script src="views-bridge.mjs" type="module"></script>
 <script src="app.js" type="module"></script>
 </head>
 <body data-theme="system">
@@ -472,6 +473,7 @@
       <button aria-controls="historicalScanDialog" aria-selected="true" class="tab" data-view="historical" id="tab-historical" role="tab" type="button">Historical Scan</button>
       <button aria-controls="archiveExistingDialog" aria-selected="false" class="tab" data-view="archive" id="tab-archive" role="tab" tabindex="-1" type="button">PDF archive</button>
       <button aria-controls="diagnosticsDialog" aria-selected="false" class="tab" data-view="health" id="tab-health" role="tab" tabindex="-1" type="button">Health</button>
+      <button aria-controls="bridgePanel" aria-selected="false" class="tab" data-view="bridge" id="tab-bridge" role="tab" tabindex="-1" type="button">Bridge</button>
     </div>
   </div>
   <div class="body">
@@ -652,6 +654,27 @@
         <button class="btn" id="exportRecoveryButton" type="button">Export recovery JSON</button>
         <button class="btn" id="resetAcceptanceButton" type="button">Start new acceptance test</button>
       </div>
+    </div>
+
+    <!-- Bridge: the add-on's side of the native transport, derived from the bridge
+         counters the background records. Filled by views-bridge.mjs from civion:state. -->
+    <div aria-labelledby="tab-bridge" class="stack" data-view="bridge" hidden="" id="bridgePanel" role="tabpanel" tabindex="0">
+      <section class="pane">
+        <header class="pane-h"><h2>Transport state</h2>
+          <span class="right"><span class="chip suggested" id="bridgeStateChip">NEVER ATTEMPTED</span></span></header>
+        <p class="pane-note" id="bridgeStateNote">No exchange with the native host has been recorded in this profile.</p>
+        <dl class="kv">
+          <div><dt>Last attempt</dt><dd id="bridgeLastAttempt">—</dd></div>
+          <div><dt>Last successful contact</dt><dd id="bridgeLastContact">—</dd></div>
+          <div><dt>Last failure</dt><dd id="bridgeLastFailure">—</dd></div>
+          <div><dt>Last failure cause</dt><dd id="bridgeLastFailureCause">—</dd></div>
+          <div><dt>Packages sent</dt><dd id="bridgeEmitted">0</dd></div>
+          <div><dt>Backfills</dt><dd id="bridgeBackfills">0</dd></div>
+          <div><dt>Failures</dt><dd id="bridgeFailures">0</dd></div>
+        </dl>
+        <p class="pane-note" hidden="" id="bridgeDisabledNote">The Desktop bridge is off in Settings. Records are not sent; the status exchange still runs, so the state above is still observed.</p>
+      </section>
+      <section class="pane"><p class="pane-note">This is the add-on's side of the Native Messaging transport to the Desktop host, and only that. It says nothing about the health of the Mail domain, about Desktop itself, or about what Desktop did with a package after acknowledging it. A state is the last thing observed, at the time shown; it is not a claim about now.</p></section>
     </div>
 
   </div>

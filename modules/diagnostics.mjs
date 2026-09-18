@@ -1,4 +1,28 @@
 import { assessThunderbirdCompatibility } from "./compatibility.mjs";
+import { BRIDGE_STATES, deriveBridgeState } from "./bridge-state.mjs";
+
+// The transport check maps the four bridge states onto the three check statuses the
+// report has. The two unknown states are warnings, not passes and not failures: a
+// transport that was never tried, or whose last probe has no outcome, is not known
+// to work, and red stays reserved for a failure that was actually observed.
+const BRIDGE_CHECK_STATUS = Object.freeze({
+  [BRIDGE_STATES.OK]: "pass",
+  [BRIDGE_STATES.FAILED]: "fail",
+  [BRIDGE_STATES.NEVER_ATTEMPTED]: "warn",
+  [BRIDGE_STATES.INDETERMINATE]: "warn"
+});
+
+export function bridgeCheck(metadata) {
+  const bridge = deriveBridgeState(metadata?.desktopBridge);
+  const when = bridge.since ? ` Last known at ${bridge.since}.` : "";
+  return {
+    ...check("bridge", "Native Messaging transport to the Desktop host", BRIDGE_CHECK_STATUS[bridge.state], `${bridge.label} — ${bridge.note}${when}`),
+    bridgeState: bridge.state,
+    since: bridge.since,
+    failureCode: bridge.lastFailureCode,
+    failureReason: bridge.lastFailureReason
+  };
+}
 
 function specialUses(folder) {
   if (!folder) return [];
@@ -69,6 +93,10 @@ export async function runSelfCheck({ settings, metadata, records, listenerState,
   } catch (error) {
     checks.push(check("runtime", "Thunderbird runtime", "fail", error instanceof Error ? error.message : String(error)));
   }
+
+  // The "runtime" check above is Thunderbird. The native transport is a separate check,
+  // read from what the background recorded; the self-check sends nothing itself.
+  checks.push(bridgeCheck(metadata));
 
   try {
     const rawAccounts = await messenger.accounts.list(true);

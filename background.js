@@ -158,8 +158,11 @@ const civionMailRuntime = createMailRuntime({
   },
   onEvent: (event) => {
     if (event.type === "opened") return;
+    // The classified reason is a token from a closed set; the platform's own
+    // text never reaches the log.
     void logDiagnostic("warning", `MAIL_RUNTIME_${event.type.replace(/-/gu, "_").toUpperCase()}`, {
-      messageId: event.messageId ?? null
+      messageId: event.messageId ?? null,
+      context: event.reason ? `reason=${event.reason}` : ""
     });
   }
 });
@@ -188,9 +191,23 @@ async function sendNativePackage(contract, payload, filename) {
 async function sendNativeBridgePayload(payload, filename) {
   const { response, packageSha256 } = await sendNativePackage(DESKTOP_NATIVE_CONTRACT, payload, filename);
   if (!response || response.ok !== true || response.package_sha256 !== packageSha256) {
-    throw new Error(String(response?.error_code || response?.message || "Native host rejected the package"));
+    // A refusal keeps the host's own code, so it reaches the bridge metrics as
+    // itself rather than as the one word every failure used to collapse into.
+    const error = new Error(String(response?.error_code || response?.message || "Native host rejected the package"));
+    error.code = response?.error_code ? String(response.error_code) : "NATIVE_HOST_REJECTED";
+    throw error;
   }
   return response;
+}
+
+// What a failed exchange is recorded as. The runtime's typed errors carry a code
+// (MAIL_RUNTIME_TIMEOUT, MAIL_RUNTIME_DISCONNECTED, MAIL_RUNTIME_PROTOCOL_ERROR) and a
+// disconnect carries its classified reason; a host refusal carries the host's code.
+// Only an error that says nothing falls back to the caller's generic code.
+function bridgeFailure(error, fallbackCode) {
+  const code = typeof error?.code === "string" && error.code ? error.code : fallbackCode;
+  const reason = typeof error?.reason === "string" && error.reason ? error.reason : null;
+  return { code: code.slice(0, 120), reason };
 }
 
 async function sendNativeArchivePayload(payload, filename) {
@@ -347,26 +364,51 @@ async function recordBridgeEvent(event, detail = {}) {
       failureCount: 0,
       ...(metadata.desktopBridge || {})
     };
-      if (event === "emitted") {
+    if (event === "emitted") {
       bridge.emittedCount = numberValue(bridge.emittedCount) + 1;
       bridge.lastEmittedAt = at;
       bridge.lastRecordRef = String(detail.recordRef || "").slice(0, 120);
+      bridge.lastContactAt = at;
     } else if (event === "backfill") {
       bridge.backfillCount = numberValue(bridge.backfillCount) + 1;
       bridge.lastBackfillAt = at;
       bridge.lastBackfillAddonVersion = String(detail.addonVersion || "");
       bridge.lastBackfillRecordCount = numberValue(detail.recordCount);
-      } else if (event === "failed") {
+      if (detail.contacted !== false) bridge.lastContactAt = at;
+    } else if (event === "probe") {
+      // The status packet at startup, install and after a settings change is the
+      // one exchange that says nothing about a message, so it is the one whose
+      // outcome is worth keeping as the transport's own state. The attempt is
+      // written before the send and its outcome after, so an attempt with no
+      // outcome — in flight, or interrupted — is visible as exactly that.
+      bridge.lastProbeAt = at;
+      bridge.lastProbeEvent = String(detail.event || "startup").slice(0, 40);
+      bridge.lastProbeOutcome = null;
+      bridge.lastProbeFailureCode = null;
+      bridge.lastProbeFailureReason = null;
+    } else if (event === "probe-ok") {
+      bridge.lastProbeOutcome = "ok";
+      bridge.lastProbeSettledAt = at;
+      bridge.lastContactAt = at;
+    } else if (event === "failed") {
       bridge.failureCount = numberValue(bridge.failureCount) + 1;
       bridge.lastFailureAt = at;
-        bridge.lastFailureCode = String(detail.code || "BRIDGE_EXPORT_FAILED").slice(0, 120);
+      bridge.lastFailureCode = String(detail.code || "BRIDGE_EXPORT_FAILED").slice(0, 120);
+      bridge.lastFailureReason = detail.reason ? String(detail.reason).slice(0, 40) : null;
+      if (detail.probe === true) {
+        bridge.lastProbeOutcome = "failed";
+        bridge.lastProbeSettledAt = at;
+        bridge.lastProbeFailureCode = bridge.lastFailureCode;
+        bridge.lastProbeFailureReason = bridge.lastFailureReason;
       }
-      bridge.lastTransport = "native_messaging";
+    }
+    bridge.lastTransport = "native_messaging";
     return { ...metadata, desktopBridge: bridge };
   });
 }
 
 async function emitDesktopBridgeStatus(event = "startup") {
+  await recordBridgeEvent("probe", { event });
   const state = await getState();
   const settings = state.settings;
   const addonVersion = messenger.runtime.getManifest().version;
@@ -386,9 +428,11 @@ async function emitDesktopBridgeStatus(event = "startup") {
   };
   const filename = `CIVION_MAIL_STATUS_${bridgeTimestamp(new Date())}.json`;
   try {
-    return await sendNativeBridgePayload(payload, filename);
+    const response = await sendNativeBridgePayload(payload, filename);
+    await recordBridgeEvent("probe-ok");
+    return response;
   } catch (error) {
-    await recordBridgeEvent("failed", { code: "STATUS_NATIVE_FAILED" });
+    await recordBridgeEvent("failed", { ...bridgeFailure(error, "STATUS_NATIVE_FAILED"), probe: true });
     await logDiagnostic("error", "DESKTOP_BRIDGE_STATUS_EXPORT_FAILED", { message: safeError(error) });
     return null;
   }
@@ -414,7 +458,7 @@ async function emitDesktopBridgeRecord(record) {
     await recordBridgeEvent("emitted", { recordRef: record.id });
     return delivery;
   } catch (error) {
-    await recordBridgeEvent("failed", { code: "RECORD_NATIVE_FAILED" });
+    await recordBridgeEvent("failed", bridgeFailure(error, "RECORD_NATIVE_FAILED"));
     await logDiagnostic("error", "DESKTOP_BRIDGE_RECORD_EXPORT_FAILED", { message: safeError(error) });
     return null;
   }
@@ -490,7 +534,8 @@ async function emitDesktopBridgeBackfill(reason = "update") {
   if (state.metadata?.desktopBridge?.lastBackfillAddonVersion === addonVersion) return null;
   const records = Array.isArray(state.records) ? state.records : [];
   if (!records.length) {
-    await recordBridgeEvent("backfill", { addonVersion, recordCount: 0 });
+    // Nothing was sent, so nothing was heard back: no contact is recorded.
+    await recordBridgeEvent("backfill", { addonVersion, recordCount: 0, contacted: false });
     return null;
   }
   const payload = buildCivionMailPackage(records, addonVersion);
@@ -508,7 +553,7 @@ async function emitDesktopBridgeBackfill(reason = "update") {
     await recordBridgeEvent("backfill", { addonVersion, recordCount: records.length });
     return delivery;
   } catch (error) {
-    await recordBridgeEvent("failed", { code: "BACKFILL_NATIVE_FAILED" });
+    await recordBridgeEvent("failed", bridgeFailure(error, "BACKFILL_NATIVE_FAILED"));
     await logDiagnostic("error", "DESKTOP_BRIDGE_BACKFILL_EXPORT_FAILED", { message: safeError(error) });
     return null;
   }

@@ -46,12 +46,82 @@ export class MailRuntimeProtocolError extends Error {
   }
 }
 
+/**
+ * Why a native connection ended, as a closed set. The platform's own text is
+ * never kept: `port.error.message` can carry a filesystem path, and a string
+ * that is stored is a string that is exported. Each value below is matched
+ * against what Thunderbird's NativeMessaging.sys.mjs actually produces
+ * (verified on 156.0), and the set is not widened with states the platform
+ * cannot tell apart:
+ *
+ * - HOST_NOT_FOUND       "No such native application <name>" — the manifest is
+ *                        missing, unreadable or refused. The platform gives
+ *                        this one message for all three on purpose, so a
+ *                        registration that points at another body is not
+ *                        distinguishable here.
+ * - HOST_DISCONNECTED    "An unexpected error occurred" — the platform's
+ *                        generic message when the process could not be started
+ *                        or failed; the real cause is withheld from the add-on.
+ * - DISCONNECT_NO_REASON no `port.error` at all — end of file on the host's
+ *                        stdout, which is how a host that exits looks.
+ * - UNCLASSIFIED         any other text. Not guessed at, and never shown as
+ *                        success.
+ */
+export const DISCONNECT_REASONS = Object.freeze({
+  HOST_NOT_FOUND: "HOST_NOT_FOUND",
+  HOST_DISCONNECTED: "HOST_DISCONNECTED",
+  DISCONNECT_NO_REASON: "DISCONNECT_NO_REASON",
+  UNCLASSIFIED: "UNCLASSIFIED"
+});
+
+const KNOWN_DISCONNECT_PATTERNS = Object.freeze([
+  [/^No such native application\b/u, DISCONNECT_REASONS.HOST_NOT_FOUND],
+  [/^An unexpected error occurred\.?$/u, DISCONNECT_REASONS.HOST_DISCONNECTED]
+]);
+
+const DISCONNECT_DETAIL_LIMIT = 120;
+
+/** A bounded, path-free rendering of platform text, for a log line and nothing else. */
+export function sanitizeDisconnectDetail(value) {
+  const text = value === undefined || value === null ? "" : String(value);
+  return text
+    .replace(/[A-Za-z]:[\\/][^\s"'<>|]*/gu, "<path>")
+    .replace(/(?:^|[\s"'(])(?:\/[^\s"'<>|/]+){2,}/gu, " <path>")
+    .replace(/\\\\[^\s"'<>|]+/gu, "<path>")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, DISCONNECT_DETAIL_LIMIT);
+}
+
+/**
+ * Classify what the port reported on disconnect. Accepts the port itself, its
+ * `error` object, or a bare message; anything that carries no message is a
+ * disconnect with no reason.
+ */
+export function classifyDisconnect(portOrError) {
+  let candidate = portOrError;
+  if (candidate && typeof candidate === "object" && "error" in candidate && !("message" in candidate)) {
+    candidate = candidate.error;
+  }
+  const message = candidate && typeof candidate === "object" ? candidate.message : candidate;
+  if (message === undefined || message === null || String(message).trim() === "") {
+    return DISCONNECT_REASONS.DISCONNECT_NO_REASON;
+  }
+  const text = String(message).trim();
+  for (const [pattern, reason] of KNOWN_DISCONNECT_PATTERNS) {
+    if (pattern.test(text)) return reason;
+  }
+  return DISCONNECT_REASONS.UNCLASSIFIED;
+}
+
 /** The connection went away with packages still outstanding. */
 export class MailRuntimeDisconnectedError extends Error {
-  constructor(message) {
+  constructor(message, { reason = DISCONNECT_REASONS.UNCLASSIFIED, detail = "" } = {}) {
     super(message);
     this.name = "MailRuntimeDisconnectedError";
     this.code = "MAIL_RUNTIME_DISCONNECTED";
+    this.reason = Object.values(DISCONNECT_REASONS).includes(reason) ? reason : DISCONNECT_REASONS.UNCLASSIFIED;
+    this.detail = sanitizeDisconnectDetail(detail);
   }
 }
 
@@ -166,11 +236,20 @@ export function createMailRuntime({
       );
     });
 
-    port.onDisconnect.addListener(() => {
+    // The listener receives the port; Thunderbird sets `port.error` on it when
+    // the connection ended because of an error, and leaves it null when the
+    // host simply closed its end. The listener that reads nothing could not
+    // tell a missing registration from a host that exited.
+    port.onDisconnect.addListener((disconnected) => {
+      const source = disconnected && typeof disconnected === "object" ? disconnected : port;
+      const reason = classifyDisconnect(source);
       failSession(
         current,
-        new MailRuntimeDisconnectedError("The CIVION Mail Runtime connection closed"),
-        { type: "disconnected" }
+        new MailRuntimeDisconnectedError(
+          `The CIVION Mail Runtime connection closed (${reason})`,
+          { reason, detail: source?.error?.message }
+        ),
+        { type: "disconnected", reason }
       );
     });
 
@@ -212,10 +291,14 @@ export function createMailRuntime({
         // send to reuse. So the session fails as a whole: every outstanding
         // request is settled, in order, with the same reason; the port is
         // let go; and the next send opens a fresh one.
+        const reason = classifyDisconnect(cause);
         failSession(
           current,
-          new MailRuntimeDisconnectedError(String(cause?.message || cause)),
-          { type: "send-failed", messageId }
+          new MailRuntimeDisconnectedError(
+            `The CIVION Mail Runtime could not post the package (${reason})`,
+            { reason, detail: cause?.message ?? cause }
+          ),
+          { type: "send-failed", messageId, reason }
         );
       }
     });

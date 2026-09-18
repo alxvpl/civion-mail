@@ -24,14 +24,19 @@ import {
   attentionReason as attentionReasonToday
 } from "../action-center/views-today.mjs";
 import {
+  DISCONNECT_REASONS,
   MAIL_RUNTIME_CONTRACT_VERSION,
   MailRuntimeDisconnectedError,
   MailRuntimeProtocolError,
   MailRuntimeTimeoutError,
+  classifyDisconnect,
   createCorrelationId,
   createMailRuntime,
-  isValidCorrelationId
+  isValidCorrelationId,
+  sanitizeDisconnectDetail
 } from "../modules/mail-runtime.mjs";
+import { BRIDGE_STATES, deriveBridgeState } from "../modules/bridge-state.mjs";
+import { bridgeCheck } from "../modules/diagnostics.mjs";
 
 let passed = 0;
 const failures = [];
@@ -493,7 +498,9 @@ function fakePort() {
     postMessage(message) { this.posted.push(message); },
     disconnect() { this.disconnected = true; },
     answer(message) { for (const fn of listeners.message) fn(message); },
-    drop() { for (const fn of listeners.disconnect) fn(); }
+    // Thunderbird hands the port to the listener with `error` set when the connection
+    // ended in error and null when the host just closed its end.
+    drop(error = null) { this.error = error; for (const fn of listeners.disconnect) fn(this); }
   };
 }
 
@@ -1678,6 +1685,199 @@ check("T179 LICENSE at the root is the standard Civion proprietary notice, warra
   && /THE SOFTWARE AND MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND/u.test(licenseText)
   && /Any permission, commercial license or other authorization must be granted explicitly in writing by the copyright holder\./u.test(licenseText)
   && !/\bMIT License|Apache License|GNU General Public|open source/iu.test(licenseText));
+
+// ---- 0.8.4: the transport says why it ended, and the state is named (029 §3.2–3.6, §5.11–18) ----
+
+check("T180 port.error is classified into the closed set, and the platform's text is not kept",
+  classifyDisconnect(null) === DISCONNECT_REASONS.DISCONNECT_NO_REASON
+  && classifyDisconnect({ error: null }) === DISCONNECT_REASONS.DISCONNECT_NO_REASON
+  && classifyDisconnect({ error: { message: "No such native application nl.civion.desktop" } }) === DISCONNECT_REASONS.HOST_NOT_FOUND
+  && classifyDisconnect({ message: "No such native application nl.civion.desktop" }) === DISCONNECT_REASONS.HOST_NOT_FOUND
+  && classifyDisconnect({ error: { message: "An unexpected error occurred" } }) === DISCONNECT_REASONS.HOST_DISCONNECTED
+  && classifyDisconnect({ error: { message: "Native application tried to send a message of 2000000 bytes, which exceeds the limit of 1048576 bytes." } }) === DISCONNECT_REASONS.UNCLASSIFIED
+  && classifyDisconnect({ error: { message: "Attempt to postMessage on disconnected port" } }) === DISCONNECT_REASONS.UNCLASSIFIED
+  && classifyDisconnect("something nobody has seen before") === DISCONNECT_REASONS.UNCLASSIFIED
+  && Object.keys(DISCONNECT_REASONS).length === 4
+  && (() => {
+    const detail = sanitizeDisconnectDetail(`File at path "C:\\Users\\someone\\AppData\\Roaming\\Thunderbird\\Profiles\\abc.default\\host.exe" does not exist, or is not a normal file ${"x".repeat(400)}`);
+    return !/Users|Profiles|AppData|C:\\/u.test(detail) && detail.includes("<path>") && detail.length <= 120;
+  })()
+  && !/Users|\/home\//u.test(sanitizeDisconnectDetail("Executable not found: /home/someone/.thunderbird/host")));
+
+{
+  // Reason and typed code on the error itself; the message carries the reason token,
+  // never the platform text.
+  const h = harness();
+  const pending = settled(h.runtime.send(envelopeOf(1)));
+  h.last().drop({ message: 'No such native application nl.civion.desktop C:\\Users\\x\\profile' });
+  const result = await pending;
+  check("T181 the typed code and the classified reason travel on the error, and the raw text does not",
+    !result.ok
+    && result.error.code === "MAIL_RUNTIME_DISCONNECTED"
+    && result.error.reason === DISCONNECT_REASONS.HOST_NOT_FOUND
+    && !/Users|C:\\/u.test(result.error.message)
+    && !/Users|C:\\/u.test(result.error.detail)
+    && h.events.some((e) => e.type === "disconnected" && e.reason === DISCONNECT_REASONS.HOST_NOT_FOUND)
+    && new MailRuntimeTimeoutError("x").code === "MAIL_RUNTIME_TIMEOUT"
+    && new MailRuntimeProtocolError("x").code === "MAIL_RUNTIME_PROTOCOL_ERROR"
+    && new MailRuntimeDisconnectedError("x", { reason: "made-up" }).reason === DISCONNECT_REASONS.UNCLASSIFIED,
+    `${result.error?.code} ${result.error?.reason} ${result.error?.message}`);
+}
+
+const bgNow = readFileSync(new URL("../background.js", import.meta.url), "utf8");
+check("T182 the typed code reaches the bridge metrics and the metrics shape the host validates is unchanged",
+  /function bridgeFailure\(error, fallbackCode\)/u.test(bgNow)
+  && /recordBridgeEvent\("failed", \{ \.\.\.bridgeFailure\(error, "STATUS_NATIVE_FAILED"\), probe: true \}\)/u.test(bgNow)
+  && /recordBridgeEvent\("failed", bridgeFailure\(error, "RECORD_NATIVE_FAILED"\)\)/u.test(bgNow)
+  && /recordBridgeEvent\("failed", bridgeFailure\(error, "BACKFILL_NATIVE_FAILED"\)\)/u.test(bgNow)
+  && /error\.code = response\?\.error_code \? String\(response\.error_code\) : "NATIVE_HOST_REJECTED";/u.test(bgNow)
+  && (() => {
+    const body = bgNow.slice(bgNow.indexOf("function bridgeMetrics(metadata)"), bgNow.indexOf("async function recordBridgeEvent"));
+    const keys = [...body.matchAll(/^\s{4}(\w+):/gmu)].map((m) => m[1]);
+    return keys.join(",") === "version,emittedCount,backfillCount,failureCount,lastFailureCode";
+  })()
+  && /context: event\.reason \? `reason=\$\{event\.reason\}` : ""/u.test(bgNow));
+
+check("T183 the startup probe is kept, its projection is recorded, and there is no second probe",
+  /messenger\.runtime\?\.onStartup,[\s\S]*?const desktopAvailable = await emitDesktopBridgeStatus\("startup"\);\s*if \(desktopAvailable\) await emitDesktopEvidenceBackfill\("startup"\);/u.test(bgNow)
+  && /async function emitDesktopBridgeStatus\(event = "startup"\) \{\s*await recordBridgeEvent\("probe", \{ event \}\);/u.test(bgNow)
+  && /await recordBridgeEvent\("probe-ok"\);/u.test(bgNow)
+  && (bgNow.match(/async function emitDesktopBridgeStatus/gu) || []).length === 1
+  && !/alarms\.|setInterval\(/u.test(bgNow)
+  && /bridge\.lastProbeAt = at;[\s\S]*?bridge\.lastProbeOutcome = null;/u.test(bgNow)
+  && /bridge\.lastFailureReason = detail\.reason \? String\(detail\.reason\)\.slice\(0, 40\) : null;/u.test(bgNow));
+
+{
+  // The port came back from connectNative and died before anything was posted — a
+  // missing registration looks exactly like this. The package is failed with the
+  // reason, the runtime is OFF, and the next send opens a fresh port.
+  let handed = null;
+  const h = harness({ connect: () => { handed = fakePort(); return handed; } });
+  const pending = settled(h.runtime.send(envelopeOf(1)));
+  handed.drop({ message: "No such native application nl.civion.desktop" });
+  const result = await pending;
+  const firstPort = handed;
+  const next = settled(h.runtime.send(envelopeOf(2)));
+  check("T184 an immediate disconnect after connectNative returned a port fails the package with its reason and leaves nothing pending",
+    !result.ok && result.error.reason === DISCONNECT_REASONS.HOST_NOT_FOUND
+    && firstPort.disconnected && handed !== firstPort
+    && h.runtime.isOpen() && h.runtime.pendingCount() === 1,
+    `${result.error?.reason} open=${h.runtime.isOpen()} pending=${h.runtime.pendingCount()}`);
+  handed.answer({ ok: true, state: "spooled", message_id: handed.posted[0].message_id });
+  const delivered = await next;
+  check("T185 the fresh session after that disconnect is acknowledged normally",
+    delivered.ok && delivered.value.state === "spooled");
+}
+
+{
+  // Isolation: an old port that speaks after its session died cannot touch the new one.
+  const h = harness();
+  const first = settled(h.runtime.send(envelopeOf(1)));
+  const oldPort = h.last();
+  const oldId = oldPort.posted[0].message_id;
+  oldPort.drop();
+  await first;
+  const second = settled(h.runtime.send(envelopeOf(2)));
+  const newPort = h.last();
+  const eventsBefore = h.events.length;
+  // The old port answers the id it was never allowed to settle, and then an unknown one.
+  oldPort.answer({ ok: true, state: "spooled", message_id: oldId });
+  oldPort.answer({ ok: true, state: "spooled", message_id: "civion-stray" });
+  check("T186 a dead session's port cannot settle or fail the new session",
+    h.runtime.isOpen() && h.runtime.pendingCount() === 1 && !newPort.disconnected
+    && h.events.slice(eventsBefore).every((e) => e.type === "protocol-error"),
+    `open=${h.runtime.isOpen()} pending=${h.runtime.pendingCount()} events=${h.events.slice(eventsBefore).map((e) => e.type).join(",")}`);
+  newPort.answer({ ok: true, state: "spooled", message_id: newPort.posted[0].message_id });
+  const delivered = await second;
+  check("T187 the new session is acknowledged normally after the old port spoke",
+    delivered.ok && delivered.value.state === "spooled" && h.runtime.pendingCount() === 0);
+}
+
+{
+  // The settledByTimeout boundary. The set remembers the 100 most recent timed-out ids
+  // so that a late answer for one of them is dropped quietly. The 101st timeout evicts
+  // the oldest. A late answer for an evicted id is then indistinguishable from an
+  // answer nobody asked for, and it is treated as one: a protocol error that fails the
+  // session, which the next send reopens. That is the deliberate behaviour — bounded
+  // memory, and an unattributable answer never guessed at — and this is where it is
+  // written down.
+  const h = harness();
+  const port = h.last() || (h.runtime.ensureOpen(), h.last());
+  const ids = [];
+  const pendings = [];
+  for (let index = 0; index < 101; index += 1) {
+    pendings.push(settled(h.runtime.send(envelopeOf(index))));
+    ids.push(port.posted[index].message_id);
+  }
+  h.timers.fireAll();
+  const results = await Promise.all(pendings);
+  const allTimedOut = results.every((r) => !r.ok && r.error instanceof MailRuntimeTimeoutError);
+  // The second-oldest is still remembered: dropped quietly.
+  port.answer({ ok: true, state: "spooled", message_id: ids[1] });
+  const quiet = h.runtime.isOpen() && h.events.some((e) => e.type === "late-acknowledgement" && e.messageId === ids[1]);
+  // The oldest was evicted by the 101st timeout: a very late answer for it is a
+  // protocol error and fails the session.
+  port.answer({ ok: true, state: "spooled", message_id: ids[0] });
+  const failedAsProtocolError = !h.runtime.isOpen()
+    && h.events.some((e) => e.type === "protocol-error" && e.messageId === ids[0]);
+  const next = settled(h.runtime.send(envelopeOf(999)));
+  const fresh = h.last();
+  fresh.answer({ ok: true, state: "spooled", message_id: fresh.posted[0].message_id });
+  const recovered = await next;
+  check("T188 the timed-out set keeps the 100 most recent ids; a late answer for an evicted id is a protocol error, and the session reopens",
+    allTimedOut && quiet && failedAsProtocolError && fresh !== port && recovered.ok && h.runtime.isOpen(),
+    `timedOut=${allTimedOut} quiet=${quiet} evicted=${failedAsProtocolError} reopened=${recovered.ok}`);
+}
+
+// The four bridge states, derived from the recorded counters, and how Self Check maps them.
+const BRIDGE_CASES = {
+  never: {},
+  inFlight: { lastProbeAt: "2026-09-18T20:00:00.000Z", lastProbeEvent: "startup", lastProbeOutcome: null },
+  ok: { lastProbeAt: "2026-09-18T20:00:00.000Z", lastProbeOutcome: "ok", lastContactAt: "2026-09-18T20:00:01.000Z", lastFailureAt: "2026-09-18T19:00:00.000Z", lastFailureCode: "MAIL_RUNTIME_TIMEOUT", emittedCount: 3, failureCount: 1 },
+  failed: { lastProbeAt: "2026-09-18T20:00:00.000Z", lastProbeOutcome: "failed", lastContactAt: "2026-09-18T19:00:00.000Z", lastFailureAt: "2026-09-18T20:00:02.000Z", lastFailureCode: "MAIL_RUNTIME_DISCONNECTED", lastFailureReason: "HOST_NOT_FOUND", failureCount: 4 },
+  legacy: { emittedCount: 7, lastEmittedAt: "2026-09-13T10:00:00.000Z" },
+  attemptedNoOutcome: { lastProbeAt: "not a date", lastProbeOutcome: "ok" }
+};
+
+check("T189 the bridge state is one of four named states, and unknown is never success",
+  deriveBridgeState(BRIDGE_CASES.never).state === BRIDGE_STATES.NEVER_ATTEMPTED
+  && deriveBridgeState(undefined).state === BRIDGE_STATES.NEVER_ATTEMPTED
+  && deriveBridgeState(BRIDGE_CASES.inFlight).state === BRIDGE_STATES.INDETERMINATE
+  && deriveBridgeState(BRIDGE_CASES.ok).state === BRIDGE_STATES.OK
+  && deriveBridgeState(BRIDGE_CASES.ok).since === "2026-09-18T20:00:01.000Z"
+  && deriveBridgeState(BRIDGE_CASES.failed).state === BRIDGE_STATES.FAILED
+  && deriveBridgeState(BRIDGE_CASES.failed).lastFailureReason === "HOST_NOT_FOUND"
+  && deriveBridgeState(BRIDGE_CASES.legacy).state === BRIDGE_STATES.OK
+  && deriveBridgeState(BRIDGE_CASES.attemptedNoOutcome).state === BRIDGE_STATES.INDETERMINATE
+  && ["confirmed", "alert", "suggested", "suggested"].join() === [BRIDGE_CASES.ok, BRIDGE_CASES.failed, BRIDGE_CASES.never, BRIDGE_CASES.inFlight].map((c) => deriveBridgeState(c).role).join()
+  && Object.values(BRIDGE_STATES).every((state) => deriveBridgeState({}).label.length > 0 && typeof state === "string"));
+
+const diagnosticsSource = readFileSync(new URL("../modules/diagnostics.mjs", import.meta.url), "utf8");
+check("T190 Self Check has a separate transport check with the four states, and the Thunderbird runtime check is untouched",
+  bridgeCheck({ desktopBridge: BRIDGE_CASES.never }).status === "warn"
+  && bridgeCheck({ desktopBridge: BRIDGE_CASES.inFlight }).status === "warn"
+  && bridgeCheck({ desktopBridge: BRIDGE_CASES.ok }).status === "pass"
+  && bridgeCheck({ desktopBridge: BRIDGE_CASES.failed }).status === "fail"
+  && bridgeCheck({}).bridgeState === BRIDGE_STATES.NEVER_ATTEMPTED
+  && bridgeCheck({ desktopBridge: BRIDGE_CASES.failed }).failureReason === "HOST_NOT_FOUND"
+  && bridgeCheck({ desktopBridge: BRIDGE_CASES.failed }).id === "bridge"
+  && /checks\.push\(check\("runtime", "Thunderbird runtime", "pass", `\$\{browserInfo\.name \|\| "Thunderbird"\} \$\{browserInfo\.version \|\| "unknown"\}`\)\);/u.test(diagnosticsSource)
+  && /checks\.push\(bridgeCheck\(metadata\)\);/u.test(diagnosticsSource));
+
+const bridgeViewSource = readFileSync(new URL("../action-center/views-bridge.mjs", import.meta.url), "utf8");
+const systemScreen = markupR005Now.slice(markupR005Now.indexOf('data-screen="system"'), markupR005Now.indexOf('data-screen="settings"'));
+check("T191 System → Bridge is a fourth tab fed by the published state, with a text label for every state",
+  (systemScreen.match(/role="tab"/gu) || []).length === 4
+  && /data-view="bridge"[^>]*role="tab"/u.test(systemScreen)
+  && /id="bridgePanel"[^>]*role="tabpanel"/u.test(systemScreen)
+  && /id="bridgeStateChip"/u.test(systemScreen)
+  && /addEventListener\("civion:state"/u.test(bridgeViewSource)
+  && /from "\.\.\/modules\/bridge-state\.mjs"/u.test(bridgeViewSource)
+  && !/messenger\./u.test(bridgeViewSource)
+  && !/send\(/u.test(bridgeViewSource)
+  && /chip\.textContent = bridge\.label/u.test(bridgeViewSource)
+  && /Mail domain/u.test(systemScreen.slice(systemScreen.indexOf('id="bridgePanel"')))
+  && /views-bridge\.mjs/u.test(markupR005Now));
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
