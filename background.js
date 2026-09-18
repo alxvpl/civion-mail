@@ -1114,7 +1114,7 @@ async function processMessage(folder, message, options = {}) {
       recipients: Array.isArray(message.recipients) ? message.recipients.map(String) : [],
       receivedAt: message.date instanceof Date ? message.date.toISOString() : new Date(message.date || Date.now()).toISOString(),
       analyzedAt: new Date().toISOString(),
-      summary: "CIVION Mail could not read or analyze this message. Open the original message for manual review.",
+      summary: "Insist could not read or analyze this message. Open the original message for manual review.",
       contentHash: null,
       requiredAction: "Review the original message manually.",
       action: { detected: false, mandatory: false, strength: 0, evidence: [] },

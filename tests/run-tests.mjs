@@ -1915,5 +1915,21 @@ check("T193 the stable identifiers, the tag labels and the contract fields did n
   && !("host_permissions" in manifest)
   && manifest.content_security_policy.extension_pages.includes("connect-src 'none'"));
 
+// The rail wordmark is the product identity a person sees on every screen. It shipped as
+// "CIVION" in the first 0.8.4 candidate and was caught live (033 §7). The wordmark is
+// Insist and the old product-brand wordmark cannot come back; the remaining CIVION
+// strings in the live markup are the archive path, the Desktop bridge label and the
+// candidate export to the Civion system, and each is named here so a new one is noticed.
+const liveMarkupNow = readFileSync(new URL("../action-center/index.r005.html", import.meta.url), "utf8");
+const wordmarks = [...liveMarkupNow.matchAll(/<div class="wordmark">([^<]*)<\/div>/gu)].map((m) => m[1].trim());
+const visibleCivion = [...liveMarkupNow.replace(/<!--[\s\S]*?-->/gu, "").matchAll(/>([^<]*\bCIVION\b[^<]*)</gu)].map((m) => m[1].trim());
+check("T194 the rail wordmark is Insist, and CIVION remains only as a path, the Desktop bridge or the Civion destination",
+  wordmarks.length === 1 && wordmarks[0] === "Insist"
+  && !/class="wordmark">\s*CIVION/u.test(liveMarkupNow)
+  && visibleCivion.length > 0
+  && visibleCivion.every((text) => /F:\\01_ARCHIVE\\CIVION|CIVION Desktop bridge|CIVION candidate export/u.test(text))
+  && !/CIVION Mail/u.test(liveMarkupNow.replace(/<pre id="aboutLicenseText">[\s\S]*?<\/pre>/u, "")),
+  JSON.stringify({ wordmarks, visibleCivion }));
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);
