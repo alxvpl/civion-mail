@@ -1662,12 +1662,22 @@ check("T177 the version on About comes from the manifest, never from a literal",
   && !/\d+\.\d+\.\d+/u.test(aboutPanel)
   && /renderAbout\(\);/u.test(actionCenterNow.slice(actionCenterNow.indexOf("async function initialize()"))));
 
-check("T178 the copyright line is the canon line and the licence opens locally",
+// The full licence is written into the About panel rather than linked: live testing on
+// Thunderbird 156 showed that runtime.getURL("LICENSE") — an extensionless resource — is
+// offered for download, and connect-src 'none' rules out reading the file at runtime.
+// So the text in the page is pinned to the file, byte for byte after HTML unescaping.
+const aboutLicenseInPage = (aboutPanel.match(/<pre id="aboutLicenseText">([\s\S]*?)<\/pre>/u) || [])[1];
+const unescapeHtml = (text) => String(text || "").replace(/\r\n/gu, "\n").replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&amp;/gu, "&");
+check("T178 the copyright line is the canon line and the full licence shown is the packaged LICENSE, verbatim and local",
   /Copyright © 2026 Plamen Alexandrov\. All rights reserved\./u.test(aboutPanel)
   && /proprietary/u.test(aboutPanel)
-  && /messenger\.runtime\.getURL\("LICENSE"\)/u.test(actionCenterNow)
+  && aboutLicenseInPage !== undefined
+  && unescapeHtml(aboutLicenseInPage).trim() === readFileSync(new URL("../LICENSE", import.meta.url), "utf8").replace(/\r\n/gu, "\n").trim()
   && !/https?:\/\//u.test(aboutPanel)
-  && !/Third-party/iu.test(aboutPanel)
+  // No "Third-party notices" section: the package carries no third-party material. The
+  // licence text itself mentions third-party terms, which is not a section.
+  && !/<h2>[^<]*third-party[^<]*<\/h2>|<summary>[^<]*third-party[^<]*<\/summary>/iu.test(aboutPanel)
+  && !/tabs\.create|runtime\.getURL\("LICENSE"\)|aboutLicenseLink/u.test(actionCenterNow)
   && /connect-src 'none'/u.test(manifest.content_security_policy.extension_pages));
 
 const licenseText = readFileSync(new URL("../LICENSE", import.meta.url), "utf8").replace(/\r\n/gu, "\n");

@@ -749,10 +749,12 @@
       </form>
     </div>
 
-    <!-- About: the product identity and the licence. The version and the licence link
-         come from the manifest and runtime.getURL at load; nothing here is a network
-         address, and there is no third-party section because the package carries no
-         third-party material. -->
+    <!-- About: the product identity and the licence. The version comes from the manifest
+         at load; the licence text is the packaged LICENSE, written into the page verbatim
+         and pinned to the file by T178, because Thunderbird offers an extensionless
+         resource for download instead of showing it, and connect-src 'none' rules out
+         reading it at runtime. Nothing here is a network address, and there is no
+         third-party section because the package carries no third-party material. -->
     <div aria-labelledby="tab-about" class="stack" data-view="about" hidden="" id="aboutPanel" role="tabpanel" tabindex="0">
       <section class="pane about-identity">
         <p class="about-name" id="aboutProductName">Insist</p>
@@ -765,7 +767,22 @@
         <header class="pane-h"><h2>Copyright and licence</h2></header>
         <p class="pane-note" id="aboutCopyright">Copyright © 2026 Plamen Alexandrov. All rights reserved.</p>
         <p class="pane-note">The source code is proprietary. It may not be copied, modified, distributed, sublicensed, published or used without explicit written permission from the copyright holder.</p>
-        <p class="pane-note"><a href="#" id="aboutLicenseLink">Read the full LICENSE</a> — the licence text packaged with the extension, opened locally.</p>
+        <details class="about-license">
+          <summary>Full licence text</summary>
+          <p class="pane-note">The text below is the <code>LICENSE</code> file packaged with the extension, as written; nothing is fetched to show it.</p>
+          <pre id="aboutLicenseText">Civion Proprietary License
+Copyright © 2026 Plamen Alexandrov. All rights reserved.
+
+This software, its source code, documentation, design assets and other original Civion materials are proprietary. No permission is granted to copy, modify, adapt, merge, publish, distribute, sublicense, sell, lease, make available, or use the source code or other Civion-owned materials without explicit written permission from the copyright holder.
+
+Third-party software, libraries, components and other third-party materials remain under their own applicable licenses and copyright terms. Nothing in this notice changes or limits rights granted by those licenses.
+
+The Civion name, logo, icons and other original product-identity elements are not licensed for reuse by this notice.
+
+THE SOFTWARE AND MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE, EXCEPT WHERE SUCH LIABILITY CANNOT LAWFULLY BE EXCLUDED.
+
+Any permission, commercial license or other authorization must be granted explicitly in writing by the copyright holder.</pre>
+        </details>
       </section>
     </div>
   </div>
